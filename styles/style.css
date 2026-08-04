@@ -1,0 +1,79 @@
+/* style.css — Global styles for Solar Blaster.
+   Mostly about making the Phaser canvas fill the window and hiding browser chrome. */
+
+/* Force-load the Orbitron font so Phaser can use it before the canvas renders. */
+@font-face { font-family: 'Orbitron'; src: local('Orbitron'); }
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin:     0;
+  padding:    0;
+}
+
+html, body {
+  width:            100%;
+  height:           100%;
+  background-color: #05010F;   /* match the game background */
+  overflow:         hidden;
+  touch-action:     none;      /* prevent browser scroll / zoom on touch */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select:      none;
+}
+
+/* Phaser appends a <canvas> to body. Center it. */
+canvas {
+  display:  block;
+  margin:   auto;
+  /* Prevent tap-highlight on canvas on iOS */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Portrait-mode "rotate your device" overlay ─────────────────────────────
+   Shown only on phones held vertically.
+   Uses a CSS orientation media query.                                       */
+
+#portrait-overlay {
+  display:          none;    /* hidden by default (landscape) */
+  position:         fixed;
+  inset:            0;
+  z-index:          9999;
+  background:       #05010F;
+  color:            #00F5FF;
+  font-family:      'Orbitron', 'Courier New', monospace;
+  flex-direction:   column;
+  align-items:      center;
+  justify-content:  center;
+  gap:              16px;
+  text-align:       center;
+  padding:          24px;
+}
+
+#portrait-overlay .rotate-icon {
+  font-size:        88px;
+  animation:        spin 2s linear infinite;
+}
+
+#portrait-overlay p {
+  font-size:        22px;
+  letter-spacing:   0.1em;
+  text-transform:   uppercase;
+}
+
+#portrait-overlay .sub {
+  font-size:        14px;
+  color:            #445566;
+  text-transform:   none;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+/* Show the overlay on portrait phones (width < 600px AND portrait orientation). */
+@media screen and (orientation: portrait) and (max-width: 768px) {
+  #portrait-overlay {
+    display: flex;
+  }
+}

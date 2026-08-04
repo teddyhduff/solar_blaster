@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Solar Blaster</title>
+
+  <!-- Orbitron — retro/sci-fi font for all in-game text -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles/style.css" />
+
+  <!-- Phaser 3 — loaded via CDN before our game modules -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Portrait-mode overlay ──────────────────────────────────────────────
+       Shown on mobile when the device is held vertically.
+       Phaser's canvas sits behind this via z-index.                        -->
+  <div id="portrait-overlay">
+    <div class="rotate-icon">↻</div>
+    <p>ROTATE YOUR DEVICE</p>
+    <p class="sub">Solar Blaster plays in landscape</p>
+  </div>
+
+  <!-- Phaser mounts its canvas directly into the body (config has no parent set,
+       so it defaults to document.body). The CSS below positions it correctly. -->
+
+  <!-- Main game module — loaded after Phaser so the global Phaser object exists -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
