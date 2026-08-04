@@ -178,6 +178,7 @@ export class HangarScene extends Phaser.Scene {
     const { width } = this.scale;
     const cx = width / 2;
     const hexStr = '#' + skin.color.toString(16).padStart(6, '0');
+    const maxTier = track.maxTier ?? track.costs?.length ?? 0;
 
     // Row background.
     const rowBg = this.add.graphics().setDepth(1);
@@ -193,7 +194,7 @@ export class HangarScene extends Phaser.Scene {
     }).setDepth(3);
 
     // Description + next-tier bonus.
-    const nextBonus = currentTier < track.maxTier
+    const nextBonus = currentTier < maxTier
       ? `  ›  ${track.bonusLabels[currentTier]}`
       : '  ›  MAXED OUT';
     this.add.text(60, y + 38, track.description + nextBonus, {
@@ -202,7 +203,7 @@ export class HangarScene extends Phaser.Scene {
     }).setDepth(3);
 
     // Tier pip indicators.
-    for (let t = 0; t < track.maxTier; t++) {
+    for (let t = 0; t < maxTier; t++) {
       const px     = cx + t * 32 - 32;
       const filled = t < currentTier;
       const pipG   = this.add.graphics().setDepth(3);
@@ -213,7 +214,7 @@ export class HangarScene extends Phaser.Scene {
     }
 
     // Buy / MAX button.
-    if (currentTier < track.maxTier) {
+    if (currentTier < maxTier) {
       const cost  = track.costs[currentTier];
       const btnX  = width - 130;
       const btnBg = this.add.graphics().setDepth(3);
