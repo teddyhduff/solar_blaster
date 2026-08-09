@@ -281,6 +281,76 @@ export class AudioSystem {
     }
   }
 
+  // ── V2 weapon SFX placeholders ───────────────────────────────────────────────
+  // WeaponSystem calls these if a real asset isn't loaded.
+
+  playLaserShot() {
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.06);
+    g.gain.setValueAtTime(0.18, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.07);
+    o.connect(g); g.connect(this.sfxGain ?? this.masterGain);
+    o.start(); o.stop(this.ctx.currentTime + 0.07);
+  }
+
+  playReloadStart() {
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(180, this.ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(240, this.ctx.currentTime + 0.15);
+    g.gain.setValueAtTime(0.12, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
+    o.connect(g); g.connect(this.sfxGain ?? this.masterGain);
+    o.start(); o.stop(this.ctx.currentTime + 0.18);
+  }
+
+  playReloadDone() {
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(440, this.ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(660, this.ctx.currentTime + 0.10);
+    g.gain.setValueAtTime(0.14, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.14);
+    o.connect(g); g.connect(this.sfxGain ?? this.masterGain);
+    o.start(); o.stop(this.ctx.currentTime + 0.14);
+  }
+
+  playUIClick() {
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880, this.ctx.currentTime);
+    g.gain.setValueAtTime(0.10, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06);
+    o.connect(g); g.connect(this.sfxGain ?? this.masterGain);
+    o.start(); o.stop(this.ctx.currentTime + 0.06);
+  }
+
+  playBossAlert() {
+    if (!this.ctx) return;
+    const freqs = [220, 330, 440];
+    freqs.forEach((f, i) => {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, this.ctx.currentTime + i * 0.12);
+      g.gain.setValueAtTime(0.18, this.ctx.currentTime + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + i * 0.12 + 0.25);
+      o.connect(g); g.connect(this.sfxGain ?? this.masterGain);
+      o.start(this.ctx.currentTime + i * 0.12);
+      o.stop(this.ctx.currentTime + i * 0.12 + 0.25);
+    });
+  }
+
   destroy() {
     this.stopMusic();
   }

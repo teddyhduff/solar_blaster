@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 0 440 140" width="440" height="140" role="img" aria-label="Reflex 07 player ship">
+  <defs>
+    <pattern id="ht" width="9" height="9" patternUnits="userSpaceOnUse">
+      <circle cx="1.6" cy="1.6" r="1.5" fill="#16181c" opacity=".5"></circle>
+    </pattern>
+    <filter id="glow" x="-60%" y="-160%" width="240%" height="420%">
+      <feGaussianBlur stdDeviation="7"></feGaussianBlur>
+    </filter>
+    <polygon id="hull" points="338,70 250,52 120,44 40,48 10,58 10,82 40,92 120,96 250,88"></polygon>
+  </defs>
+
+  
+  <ellipse cx="-18" cy="71" rx="42" ry="17" fill="#ff4d17" opacity=".32" filter="url(#glow)"></ellipse>
+  <rect x="-34" y="60" width="46" height="9" rx="4.5" fill="#ff4d17"></rect>
+  <rect x="-34" y="73" width="46" height="9" rx="4.5" fill="#ff4d17"></rect>
+
+  
+  <use href="#hull" fill="#ff4d17" opacity=".9" transform="translate(5,5)"></use>
+
+  
+  <polygon points="220,56 90,6 40,10 62,34 150,60" fill="#efe9dd"></polygon>
+  <polygon points="220,84 90,134 40,130 62,106 150,80" fill="#efe9dd"></polygon>
+  <polygon points="150,60 62,34 72,44 150,66" fill="#16181c" opacity=".5"></polygon>
+
+  
+  <use href="#hull" fill="#efe9dd"></use>
+  <use href="#hull" fill="url(#ht)"></use>
+
+  
+  <polygon points="196,52 120,45 74,49 96,58 180,60" fill="#16181c"></polygon>
+  <polygon points="96,62 60,62 58,68 96,68" fill="#16181c" opacity=".55"></polygon>
+  <polygon points="250,78 110,84 44,82 44,87 112,89 250,83" fill="#ff4d17"></polygon>
+  <polygon points="300,68 180,62 180,64 300,69" fill="#16181c" opacity=".45"></polygon>
+
+  
+  <rect x="336" y="69" width="34" height="2" fill="#efe9dd" opacity=".8"></rect>
+</svg>

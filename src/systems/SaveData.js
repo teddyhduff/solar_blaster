@@ -1,62 +1,66 @@
 // SaveData.js — All localStorage reads and writes go through here.
-// Keys match the schema from spec Section 17.
-// Default state: Mercury only unlocked, 0 coins, no high score, all upgrade tiers 0, skin cyan.
+// V2 schema (Section 16). Legacy V1 keys are wiped on first boot.
+//
+// Default state: Neptune only unlocked, 0 coins, no high scores,
+// all upgrade tiers 0, default skin marking 'standard', campaignComplete false.
 
+// ── V1 legacy keys (wiped on migrate) ──────────────────────────────────────
+const V1_KEYS = [
+  'solarBlaster.highScore',
+  'solarBlaster.unlockedPlanets',
+  'solarBlaster.upgrades',
+];
+
+// ── V2 keys ─────────────────────────────────────────────────────────────────
 const KEYS = {
-  HIGH_SCORE:       'solarBlaster.highScore',
-  COINS:            'solarBlaster.coins',
-  UNLOCKED_PLANETS: 'solarBlaster.unlockedPlanets',
-  UPGRADES:         'solarBlaster.upgrades',
+  COINS:             'solarBlaster.coins',
+  UNLOCKED:          'solarBlaster.unlocked',
+  HIGH_SCORES:       'solarBlaster.highScores',
+  UPGRADES:          'solarBlaster.upgrades',
+  CAMPAIGN_COMPLETE: 'solarBlaster.campaignComplete',
+  SCHEMA_VERSION:    'solarBlaster.schemaVersion',
 };
 
-// Per-skin default upgrade tiers (all 0 = no upgrades purchased).
-const DEFAULT_SHIP_UPGRADES = {
-  cyan:    { targeting: 0, reactiveArmour: 0 },
-  magenta: { hyperdrive: 0, microreactor: 0 },
-  gold:    { heavyCannon: 0, blastPlating: 0 },
-  green:   { afterburner: 0, evadeProtocol: 0 },
-  white:   { quadCannons: 0, phaseShield: 0 },
-};
+const CURRENT_VERSION = 2;
 
+// All 9 destination IDs in campaign order (Neptune → Sun).
+export const DESTINATION_IDS = [
+  'neptune', 'uranus', 'saturn', 'jupiter', 'mars',
+  'earth', 'venus', 'mercury', 'sun',
+];
+
+// ── Default upgrade object (V2 — 4 global tracks + skin marking) ────────────
 const DEFAULT_UPGRADES = {
-  skin:       'cyan',
-  ownedSkins: ['cyan'],
-  ships:      DEFAULT_SHIP_UPGRADES,
+  weaponPower:      0,   // 0–3 tiers
+  shieldCapacity:   0,   // 0–3 tiers
+  speed:            0,   // 0–3 tiers
+  magazineCapacity: 0,   // 0–3 tiers
+  skin:             'standard',   // marking/pattern id, not hull colour
 };
 
-/** Deeply merge saved ships data with defaults so new skins/tracks always have a base value. */
-function mergeUpgrades(saved) {
-  const ships = {};
-  Object.keys(DEFAULT_SHIP_UPGRADES).forEach(skinId => {
-    ships[skinId] = {
-      ...DEFAULT_SHIP_UPGRADES[skinId],
-      ...(saved.ships?.[skinId] || {}),
-    };
-  });
-  return {
-    ...DEFAULT_UPGRADES,
-    ...saved,
-    ownedSkins: saved.ownedSkins || ['cyan'],
-    ships,
-  };
+// ── Migration ────────────────────────────────────────────────────────────────
+function migrate() {
+  const version = parseInt(localStorage.getItem(KEYS.SCHEMA_VERSION) || '0', 10);
+  if (version >= CURRENT_VERSION) return;
+
+  // Wipe V1 keys.
+  V1_KEYS.forEach(k => localStorage.removeItem(k));
+
+  // Write fresh V2 defaults.
+  localStorage.setItem(KEYS.COINS, '0');
+  localStorage.setItem(KEYS.UNLOCKED, JSON.stringify(['neptune']));
+  localStorage.setItem(KEYS.HIGH_SCORES, JSON.stringify({}));
+  localStorage.setItem(KEYS.UPGRADES, JSON.stringify(DEFAULT_UPGRADES));
+  localStorage.setItem(KEYS.CAMPAIGN_COMPLETE, 'false');
+  localStorage.setItem(KEYS.SCHEMA_VERSION, String(CURRENT_VERSION));
 }
 
+// ── Public API ───────────────────────────────────────────────────────────────
 export const SaveData = {
 
-  // ── High Score ─────────────────────────────────────────────────────────────
-  getHighScore() {
-    return parseInt(localStorage.getItem(KEYS.HIGH_SCORE) || '0', 10);
-  },
-  setHighScore(score) {
-    localStorage.setItem(KEYS.HIGH_SCORE, String(score));
-  },
-  /** Update the high score only if this run beats it. */
-  maybeUpdateHighScore(score) {
-    if (score > this.getHighScore()) {
-      this.setHighScore(score);
-      return true;
-    }
-    return false;
+  /** Call once from BootScene before any other access. */
+  init() {
+    migrate();
   },
 
   // ── Coins ──────────────────────────────────────────────────────────────────
@@ -69,7 +73,7 @@ export const SaveData = {
   addCoins(amount) {
     this.setCoins(this.getCoins() + amount);
   },
-  /** Deducts coins. Returns true if successful, false if not enough coins. */
+  /** Returns true if deduction succeeded; false if insufficient funds. */
   spendCoins(amount) {
     const current = this.getCoins();
     if (current < amount) return false;
@@ -77,78 +81,93 @@ export const SaveData = {
     return true;
   },
 
-  // ── Unlocked Planets ───────────────────────────────────────────────────────
-  getUnlockedPlanets() {
-    const raw = localStorage.getItem(KEYS.UNLOCKED_PLANETS);
-    return raw ? JSON.parse(raw) : ['mercury'];
-  },
-  unlockPlanet(id) {
-    const list = this.getUnlockedPlanets();
-    if (!list.includes(id)) {
-      list.push(id);
-      localStorage.setItem(KEYS.UNLOCKED_PLANETS, JSON.stringify(list));
+  // ── Unlocked destinations ──────────────────────────────────────────────────
+  getUnlocked() {
+    try {
+      return JSON.parse(localStorage.getItem(KEYS.UNLOCKED) || '["neptune"]');
+    } catch {
+      return ['neptune'];
     }
   },
-  isPlanetUnlocked(id) {
-    return this.getUnlockedPlanets().includes(id);
+  isUnlocked(id) {
+    return this.getUnlocked().includes(id);
+  },
+  /** Unlock the next destination after id, if not already unlocked. */
+  unlockNext(id) {
+    const idx = DESTINATION_IDS.indexOf(id);
+    if (idx < 0 || idx >= DESTINATION_IDS.length - 1) return null;
+    const next = DESTINATION_IDS[idx + 1];
+    const current = this.getUnlocked();
+    if (!current.includes(next)) {
+      current.push(next);
+      localStorage.setItem(KEYS.UNLOCKED, JSON.stringify(current));
+    }
+    return next;
   },
 
-  // ── Upgrades (top-level) ───────────────────────────────────────────────────
-  _getUpgradesRaw() {
-    const raw = localStorage.getItem(KEYS.UPGRADES);
-    return raw ? mergeUpgrades(JSON.parse(raw)) : { ...DEFAULT_UPGRADES, ships: { ...DEFAULT_SHIP_UPGRADES } };
+  // ── Per-planet high scores ─────────────────────────────────────────────────
+  getHighScores() {
+    try {
+      return JSON.parse(localStorage.getItem(KEYS.HIGH_SCORES) || '{}');
+    } catch {
+      return {};
+    }
   },
-  _saveUpgrades(data) {
-    localStorage.setItem(KEYS.UPGRADES, JSON.stringify(data));
+  getHighScore(planetId) {
+    return this.getHighScores()[planetId] || 0;
+  },
+  /** Update a planet's high score only if the new score beats it. Returns true if updated. */
+  maybeUpdateHighScore(planetId, score) {
+    const scores = this.getHighScores();
+    if (score > (scores[planetId] || 0)) {
+      scores[planetId] = score;
+      localStorage.setItem(KEYS.HIGH_SCORES, JSON.stringify(scores));
+      return true;
+    }
+    return false;
   },
 
-  // ── Skin ──────────────────────────────────────────────────────────────────
+  // ── Upgrades ───────────────────────────────────────────────────────────────
+  getUpgrades() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEYS.UPGRADES) || '{}');
+      return { ...DEFAULT_UPGRADES, ...saved };
+    } catch {
+      return { ...DEFAULT_UPGRADES };
+    }
+  },
+  getUpgradeTier(track) {
+    return this.getUpgrades()[track] ?? 0;
+  },
+  setUpgradeTier(track, tier) {
+    const upgrades = this.getUpgrades();
+    upgrades[track] = tier;
+    localStorage.setItem(KEYS.UPGRADES, JSON.stringify(upgrades));
+  },
+  /** Increment a track by 1 tier. Returns new tier, or false if already at max. */
+  purchaseUpgrade(track, maxTier = 3) {
+    const current = this.getUpgradeTier(track);
+    if (current >= maxTier) return false;
+    const next = current + 1;
+    this.setUpgradeTier(track, next);
+    return next;
+  },
+
+  // ── Skin marking ──────────────────────────────────────────────────────────
   getSkin() {
-    return this._getUpgradesRaw().skin || 'cyan';
+    return this.getUpgrades().skin || 'standard';
   },
   setSkin(id) {
-    const data = this._getUpgradesRaw();
-    data.skin = id;
-    this._saveUpgrades(data);
+    const upgrades = this.getUpgrades();
+    upgrades.skin = id;
+    localStorage.setItem(KEYS.UPGRADES, JSON.stringify(upgrades));
   },
 
-  // ── Owned Skins ───────────────────────────────────────────────────────────
-  getOwnedSkins() {
-    return this._getUpgradesRaw().ownedSkins || ['cyan'];
+  // ── Campaign complete ──────────────────────────────────────────────────────
+  isCampaignComplete() {
+    return localStorage.getItem(KEYS.CAMPAIGN_COMPLETE) === 'true';
   },
-  isSkinOwned(id) {
-    return id === 'cyan' || this.getOwnedSkins().includes(id);
-  },
-  buySkin(id) {
-    const data = this._getUpgradesRaw();
-    if (!data.ownedSkins.includes(id)) {
-      data.ownedSkins.push(id);
-      this._saveUpgrades(data);
-    }
-  },
-
-  // ── Per-ship Upgrades ─────────────────────────────────────────────────────
-  /** Returns { trackId: tier } for the given skin. All keys default to 0. */
-  getShipUpgrades(skinId) {
-    const data = this._getUpgradesRaw();
-    return { ...(DEFAULT_SHIP_UPGRADES[skinId] || {}), ...(data.ships?.[skinId] || {}) };
-  },
-  /** Save a single track tier for a given skin. */
-  setShipUpgradeTier(skinId, trackId, tier) {
-    const data = this._getUpgradesRaw();
-    if (!data.ships[skinId]) data.ships[skinId] = { ...(DEFAULT_SHIP_UPGRADES[skinId] || {}) };
-    data.ships[skinId][trackId] = tier;
-    this._saveUpgrades(data);
-  },
-  /** Convenience: get one track tier for a skin. */
-  getShipUpgradeTier(skinId, trackId) {
-    return this.getShipUpgrades(skinId)[trackId] || 0;
-  },
-
-  // ── Dev helper ────────────────────────────────────────────────────────────
-  /** Wipe all saved data back to defaults. Open browser console and call SaveData.resetAll() to use. */
-  resetAll() {
-    Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-    console.log('[SaveData] All data reset.');
+  setCampaignComplete() {
+    localStorage.setItem(KEYS.CAMPAIGN_COMPLETE, 'true');
   },
 };

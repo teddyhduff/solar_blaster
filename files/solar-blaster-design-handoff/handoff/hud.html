@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Solar Blaster — 1b HUD reference</title>
+<link rel="stylesheet" href="./solar-blaster.css">
+<style>
+  html,body{margin:0;height:100%;background:#0b0c0e}
+  .stage{position:relative;width:1280px;height:720px;margin:24px auto;overflow:hidden}
+  .hud-top{position:absolute;inset:0 0 auto 0;display:flex;justify-content:space-between;
+           align-items:flex-start;padding:28px 30px;box-sizing:border-box}
+  .stats{display:flex;gap:44px;align-items:flex-start}
+  .hull{position:absolute;left:30px;bottom:32px;width:340px}
+  .hull__head{display:flex;justify-content:space-between;font:700 11px/1 var(--sb-label);
+              letter-spacing:.28em;color:rgba(239,233,221,.6);margin-bottom:7px}
+  .approach{display:flex;align-items:center;gap:9px;justify-content:flex-end;margin-top:9px}
+  .planet{position:absolute;right:-150px;top:-110px;width:660px;height:660px}
+  .rock{position:absolute;background:var(--sb-bone);
+        clip-path:polygon(18% 4%,72% 0,100% 40%,88% 88%,36% 100%,0 62%)}
+  .shot{position:absolute;height:5px;background:var(--sb-blaze);
+        box-shadow:0 9px 0 -1px rgba(255,77,23,.35)}
+</style>
+</head>
+<body>
+<div class="stage sb-screen">
+  <div class="planet sb-planet"><div class="sb-crater" style="left:30%;top:44%;width:150px;height:150px"></div></div>
+
+  <div class="rock" style="left:250px;top:470px;width:60px;height:54px"></div>
+  <div class="rock" style="left:620px;top:190px;width:40px;height:36px;opacity:.75"></div>
+
+  <!-- player: 102px LOD, nose right -->
+  <img class="sb-ship" src="./assets/ship-reflex07-small.svg" width="102"
+       style="position:absolute;left:70px;top:330px" alt="">
+  <div class="shot" style="left:200px;top:352px;width:150px"></div>
+
+  <div class="hud-top">
+    <div class="stats">
+      <div><div class="sb-label">Score</div><div class="sb-num">50</div></div>
+      <div><div class="sb-label">Coins</div><div class="sb-num">00</div></div>
+      <div style="padding-top:4px">
+        <div class="sb-label">Armed</div>
+        <div class="sb-chip" style="margin-top:6px">01 LASER</div>
+      </div>
+    </div>
+
+    <!-- plate is required: this block sits over the planet -->
+    <div class="sb-plate" style="text-align:right">
+      <div class="sb-title">MERCURY</div>
+      <div class="approach">
+        <div class="sb-label sb-label--quiet" style="letter-spacing:.2em">Approach</div>
+        <div class="sb-meter">
+          <div class="sb-meter__fill" style="width:12%"></div>
+          <div class="sb-meter__thumb" style="left:12%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hull">
+    <div class="hull__head"><span>Hull</span><span>65 / 100</span></div>
+    <div class="sb-bar"><div class="sb-bar__fill" style="width:65%"></div></div>
+  </div>
+</div>
+</body>
+</html>

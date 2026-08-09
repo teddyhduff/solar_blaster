@@ -1,0 +1,82 @@
+/* Solar Blaster — Stencil Riso (scheme 1b)
+   Two inks on ink-black. Everything halftoned. Deliberate misprint offset. */
+
+@import url('https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Barlow+Condensed:wght@500;700&family=Space+Mono&display=swap');
+
+:root {
+  /* ink */
+  --sb-ink:        #16181c;  /* ground, canopies, dot screen */
+  --sb-ink-deep:   #101216;  /* panels, chrome behind HUD */
+  --sb-bone:       #efe9dd;  /* paper / hull / HUD strokes */
+  --sb-blaze:      #ff4d17;  /* thrust, guns, damage, danger — nothing else */
+  --sb-teal:       #0f7a6a;  /* third ink, rare: shields / pickups only */
+
+  --sb-dot:        9px;      /* halftone screen pitch */
+  --sb-misprint:   6px;      /* plate offset, always down + right */
+  --sb-rule:       2px;      /* stencil stroke weight */
+
+  --sb-display: 'Saira Stencil One', 'Impact', sans-serif;  /* numerals, planet names */
+  --sb-label:   'Barlow Condensed', 'Oswald', sans-serif;   /* labels, 700, tracked .3em, UPPER */
+  --sb-mono:    'Space Mono', ui-monospace, monospace;      /* readouts, debug */
+}
+
+/* ---- ground -------------------------------------------------------- */
+.sb-screen {
+  background: var(--sb-ink);
+  background-image: radial-gradient(circle, rgba(239,233,221,.14) 0 1.1px, transparent 1.2px);
+  background-size: 7px 7px;           /* starfield IS the paper grain */
+  color: var(--sb-bone);
+  font-family: var(--sb-label);
+}
+
+/* ---- halftone: overlay on any solid fill ---------------------------- */
+.sb-halftone::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle, var(--sb-ink) 0 1.5px, transparent 1.6px);
+  background-size: var(--sb-dot) var(--sb-dot);
+  mix-blend-mode: multiply;
+}
+
+/* ---- planets: flat blaze disc, screened, bone keyline --------------- */
+.sb-planet { position: relative; border-radius: 50%; background: var(--sb-blaze); }
+.sb-planet::before {            /* the screen */
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle, var(--sb-ink) 0 1.4px, transparent 1.5px);
+  background-size: var(--sb-dot) var(--sb-dot); mix-blend-mode: multiply;
+}
+.sb-planet::after {             /* misregistered keyline */
+  content: ''; position: absolute; inset: -12px; border-radius: 50%;
+  border: 3px solid var(--sb-bone); opacity: .5;
+}
+.sb-crater { position: absolute; border-radius: 50%; background: var(--sb-ink); opacity: .35; }
+
+/* ---- typography ----------------------------------------------------- */
+.sb-num   { font: 400 44px/.9 var(--sb-display); color: var(--sb-bone);
+            text-shadow: 3px 3px 0 rgba(255,77,23,.9); }   /* the misprint */
+.sb-label { font: 700 11px/1 var(--sb-label); letter-spacing: .34em;
+            text-transform: uppercase; color: var(--sb-blaze); }
+.sb-label--quiet { color: rgba(239,233,221,.55); }
+.sb-title { font: 400 24px/1 var(--sb-display); letter-spacing: .06em; color: var(--sb-bone); }
+.sb-read  { font: 400 11px/1.6 var(--sb-mono); color: rgba(239,233,221,.55); }
+
+/* ---- HUD parts ------------------------------------------------------ */
+.sb-chip  { display: inline-block; padding: 5px 12px 6px;
+            border: var(--sb-rule) solid var(--sb-bone);
+            font: 400 20px/1 var(--sb-display); color: var(--sb-bone); }
+
+.sb-bar   { position: relative; height: 16px; border: var(--sb-rule) solid var(--sb-bone); padding: 2px; }
+.sb-bar__fill { height: 100%;
+            background: repeating-linear-gradient(90deg, var(--sb-bone) 0 3px, transparent 3px 6px); }
+.sb-bar--solid .sb-bar__fill { background: var(--sb-bone); }
+
+.sb-meter { position: relative; width: 220px; height: 10px; border: var(--sb-rule) solid var(--sb-bone); }
+.sb-meter__fill  { height: 100%; background: var(--sb-blaze); }
+.sb-meter__thumb { position: absolute; top: -6px; width: 2px; height: 18px; background: var(--sb-blaze); }
+
+/* Any HUD block that crosses a planet needs a knocked-out ink plate,
+   or it disappears into the blaze fill. Non-negotiable. */
+.sb-plate { background: var(--sb-ink); padding: 10px 14px 12px; }
+
+/* ---- ship ------------------------------------------------------------ */
+.sb-ship { display: block; height: auto; image-rendering: auto; }
+/* LOD: assets/ship-reflex07.svg above 150px · -small.svg to 102px · -icon.svg at 54px */

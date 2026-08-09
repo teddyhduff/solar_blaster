@@ -1,191 +1,263 @@
-// planets.js — Data for all 8 planets in solar-system order.
-// Each planet has a unique hazard, boss theme, and visual accent color.
+// planets.js — All 9 V2 destinations in fixed inward campaign order.
+// Neptune → Uranus → Saturn → Jupiter → Mars → Earth → Venus → Mercury → Sun
+//
+// Stencil Riso palette: three inks only (bone, blaze, teal).
+// 'blazeDensity' controls halftone dot density on the planet disc (0–1).
+// 'craterCount' and 'craterScale' tune the ink-disc craters.
+// No new hues — per-planet visual identity comes from dot density + crater placement.
 
 import { BALANCE } from './balance.js';
 
-// Helper: compute boss HP scaling up from Mercury (~×1.3 per planet).
+// Phaser integer colours for the three inks.
+const INK   = 0x16181c;
+const BONE  = 0xefe9dd;
+const BLAZE = 0xff4d17;
+const TEAL  = 0x0f7a6a;
+
 function bossHp(index) {
-  return Math.round(BALANCE.BOSS_HP_MERCURY * Math.pow(BALANCE.BOSS_HP_SCALE, index));
+  return Math.round(BALANCE.BOSS_HP_NEPTUNE * Math.pow(BALANCE.BOSS_HP_SCALE, index));
 }
 
 export const PLANETS = [
+
+  // ── 1. Neptune ──────────────────────────────────────────────────────────────
   {
-    id:          'mercury',
-    name:        'Mercury',
-    index:       0,
-    accentColor: 0xFF6B35,   // orange-red flare tones
-    bgTint:      0x3A1800,   // subtle warm tint on background
-    hazardId:    'solarFlare',
-    hazardDesc:  'Solar flares sweep the screen!',
-    bossTheme:   'Rogue Mining Robot',
-    bossHp:      bossHp(0),  // 300
-    theme: {
-      skyTop:          0x060200,
-      skyBottom:       0x3A1500,
-      planetBody:      0x7A6040,
-      planetShade:     0x3C2C18,
-      planetHighlight: 0xB09070,
-      atmosphere:      0xFF6B35,
-      starColor:       0xFFBB66,
-      detail:          'craters',
+    id:           'neptune',
+    name:         'Neptune',
+    subtitle:     'THE OUTER GATE',
+    index:        0,
+    gameSpeed:    5,               // level tempo multiplier (1 = original pace)
+    hazardId:     'windGusts',     // sudden lateral gusts + drifting Dark Spot vortex
+    hazardDesc:   'Supersonic wind gusts shove the ship sideways.',
+    moons: [
+      { id: 'triton', name: 'Triton', radiusRatio: 0.18, speedSign: -1,
+        desc: 'Retrograde orbit — drifts against the flow of everything else.' },
+    ],
+    boss: {
+      theme:      'Wind Leviathan',
+      hp:          bossHp(0),
+      phase2At:   0.5,
+      attackPatterns: ['gustSweep', 'vortexPull', 'plasmaBolts'],
     },
+    // Stencil Riso palette
+    blazeDensity:    0.45,   // lighter halftone — outer, cold, dark
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.25,   // faint bone rim
   },
+
+  // ── 2. Uranus ───────────────────────────────────────────────────────────────
   {
-    id:          'venus',
-    name:        'Venus',
-    index:       1,
-    accentColor: 0xB5E853,   // sickly yellow-green haze
-    bgTint:      0x1A2200,
-    hazardId:    'toxicCloud',
-    hazardDesc:  'Toxic clouds reduce visibility.',
-    bossTheme:   'Alien Bio-Creature',
-    bossHp:      bossHp(1),  // 390
-    theme: {
-      skyTop:          0x050802,
-      skyBottom:       0x273800,
-      planetBody:      0xC8C060,
-      planetShade:     0x707020,
-      planetHighlight: 0xEEE880,
-      atmosphere:      0xB5E853,
-      starColor:       0xCCDD88,
-      detail:          'clouds',
+    id:           'uranus',
+    name:         'Uranus',
+    subtitle:     'THE TILTED WORLD',
+    index:        1,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'tiltingField', // entire play-field direction rotates 90° periodically
+    hazardDesc:   "The planet's 98° tilt warps the field — drift direction rotates.",
+    moons: [
+      { id: 'miranda',  name: 'Miranda',  radiusRatio: 0.09, speedSign: 1 },
+      { id: 'titania',  name: 'Titania',  radiusRatio: 0.14, speedSign: 1 },
+      { id: 'oberon',   name: 'Oberon',   radiusRatio: 0.14, speedSign: 1 },
+    ],
+    boss: {
+      theme:      'Crystalline Robot',
+      hp:          bossHp(1),
+      phase2At:   0.5,
+      attackPatterns: ['iceShard', 'tiltReorient', 'crystalWall'],
     },
+    blazeDensity:    0.38,
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.20,
   },
+
+  // ── 3. Saturn ───────────────────────────────────────────────────────────────
   {
-    id:          'earth',
-    name:        'Earth',
-    index:       2,
-    accentColor: 0x4FC3F7,   // blue-green with white satellite glints
-    bgTint:      0x001A2B,
-    hazardId:    'debrisField',
-    hazardDesc:  'Dense satellite debris clusters!',
-    bossTheme:   'Alien Mothership',
-    bossHp:      bossHp(2),  // ~507
-    theme: {
-      skyTop:          0x000814,
-      skyBottom:       0x001A30,
-      planetBody:      0x1A4A80,
-      planetShade:     0x0A1830,
-      planetHighlight: 0x4FC3F7,
-      atmosphere:      0x4488FF,
-      starColor:       0xCCEEFF,
-      detail:          'continents',
+    id:           'saturn',
+    name:         'Saturn',
+    subtitle:     'THE RING RUN',
+    index:        2,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'ringDebris',   // dense fast small asteroid bands + hexagonal bonus pocket
+    hazardDesc:   'Ring debris demands precise weaving. Find the hexagonal pocket for coins.',
+    moons: [
+      { id: 'titan',     name: 'Titan',     radiusRatio: 0.20, speedSign: 1 },
+      { id: 'enceladus', name: 'Enceladus', radiusRatio: 0.08, speedSign: 1 },
+      { id: 'mimas',     name: 'Mimas',     radiusRatio: 0.07, speedSign: 1 },
+    ],
+    boss: {
+      theme:      'Ring Harvester',
+      hp:          bossHp(2),
+      phase2At:   0.5,
+      attackPatterns: ['ringShrapnel', 'segmentCharge', 'debrisCloud'],
     },
+    blazeDensity:    0.55,   // warm, medium density
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.18,
+    ringVisible:     true,   // Saturn renders a bone ring arc behind the disc
   },
+
+  // ── 4. Jupiter ──────────────────────────────────────────────────────────────
   {
-    id:          'mars',
-    name:        'Mars',
-    index:       3,
-    accentColor: 0xE57373,   // rust red
-    bgTint:      0x2B0800,
-    hazardId:    'sandstorm',
-    hazardDesc:  'Sandstorm pushes your ship!',
-    bossTheme:   'Rock Guardian',
-    bossHp:      bossHp(3),  // ~659
-    theme: {
-      skyTop:          0x0D0302,
-      skyBottom:       0x4A1500,
-      planetBody:      0xA03020,
-      planetShade:     0x500E05,
-      planetHighlight: 0xE07050,
-      atmosphere:      0xE57373,
-      starColor:       0xFFAA88,
-      detail:          'dust',
+    id:           'jupiter',
+    name:         'Jupiter',
+    subtitle:     'THE GIANT\'S EYE',
+    index:        3,
+    gameSpeed:    5,               // level tempo multiplier (1 = original pace)
+    hazardId:     'gravityWells',  // gravity wells + radiation belt lanes
+    hazardDesc:   'Gravity wells drag the ship. Radiation belt lanes drain shield.',
+    moons: [
+      { id: 'io',       name: 'Io',       radiusRatio: 0.12, speedSign: 1 },
+      { id: 'europa',   name: 'Europa',   radiusRatio: 0.11, speedSign: 1 },
+      { id: 'ganymede', name: 'Ganymede', radiusRatio: 0.20, speedSign: 1 },
+      { id: 'callisto', name: 'Callisto', radiusRatio: 0.16, speedSign: 1 },
+    ],
+    boss: {
+      theme:      'Robot War Machine',
+      hp:          bossHp(3),
+      phase2At:   0.5,
+      attackPatterns: ['gravitySlam', 'radiationBurst', 'missileBarrage'],
+      bossArena:  'greatRedSpot',  // Conquest replaces backdrop with GRS swirl
     },
+    blazeDensity:    0.70,   // dense banding, vivid
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.30,
+    bandCount:       6,      // bone horizontal banding lines on disc
   },
+
+  // ── 5. Mars ─────────────────────────────────────────────────────────────────
   {
-    id:          'jupiter',
-    name:        'Jupiter',
-    index:       4,
-    accentColor: 0xFFB74D,   // amber/brown bands
-    bgTint:      0x1A0D00,
-    hazardId:    'gravityWell',
-    hazardDesc:  'Gravity wells pull you in!',
-    bossTheme:   'Giant War Machine',
-    bossHp:      bossHp(4),  // ~857
-    theme: {
-      skyTop:          0x080400,
-      skyBottom:       0x200E00,
-      planetBody:      0xC08040,
-      planetShade:     0x603010,
-      planetHighlight: 0xF0C070,
-      atmosphere:      0xFFB74D,
-      starColor:       0xFFDD99,
-      detail:          'bands',
+    id:           'mars',
+    name:         'Mars',
+    subtitle:     'THE RUST PLAINS',
+    index:        4,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'dustStorm',    // cuts visibility + pushes ship + floaty low-gravity
+    hazardDesc:   'Dust storms blind and push you. Lower gravity makes the ship floatier.',
+    moons: [
+      { id: 'phobos', name: 'Phobos', radiusRatio: 0.06, speedSign: 1 },
+      { id: 'deimos', name: 'Deimos', radiusRatio: 0.05, speedSign: 1 },
+    ],
+    boss: {
+      theme:      'Rock Construct',
+      hp:          bossHp(4),
+      phase2At:   0.5,
+      attackPatterns: ['boulderThrow', 'dustSurge', 'groundSlam'],
     },
+    blazeDensity:    0.75,
+    craterCount:     8,
+    craterScale:     0.06,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.22,
+    lowGravity:      true,   // ship gravity coefficient drops to 0.6× for this level
   },
+
+  // ── 6. Earth ─────────────────────────────────────────────────────────────────
   {
-    id:          'saturn',
-    name:        'Saturn',
-    index:       5,
-    accentColor: 0xFFF176,   // pale gold rings
-    bgTint:      0x1A1600,
-    hazardId:    'ringDebris',
-    hazardDesc:  'Ring debris band — dodge fast!',
-    bossTheme:   'Ring Serpent Guardian',
-    bossHp:      bossHp(5),  // ~1114
-    theme: {
-      skyTop:          0x080700,
-      skyBottom:       0x1A1600,
-      planetBody:      0xD4B870,
-      planetShade:     0x806030,
-      planetHighlight: 0xF0E0A0,
-      atmosphere:      0xFFF176,
-      starColor:       0xFFEEBB,
-      detail:          'rings',
+    id:           'earth',
+    name:         'Earth',
+    subtitle:     'HOME TURF',
+    index:        5,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'spaceJunk',    // angular metallic debris + lightning flashes + rocket launch
+    hazardDesc:   'Space junk and lightning. A rocket crosses the field periodically.',
+    moons: [
+      { id: 'moon', name: 'The Moon', radiusRatio: 0.22, speedSign: 1 },
+    ],
+    boss: {
+      theme:      'Orbital Platform (TBC — placeholder art)',
+      hp:          bossHp(5),
+      phase2At:   0.5,
+      attackPatterns: ['laserGrid', 'missileStrike', 'satelliteSwarm'],
+      placeholder: true,   // Earth boss is human-made — final design is a cosmetic swap
     },
+    blazeDensity:    0.60,
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.35,
+    hasClouds:       true,
   },
+
+  // ── 7. Venus ─────────────────────────────────────────────────────────────────
   {
-    id:          'uranus',
-    name:        'Uranus',
-    index:       6,
-    accentColor: 0x80DEEA,   // icy cyan-blue
-    bgTint:      0x001820,
-    hazardId:    'iceComet',
-    hazardDesc:  'Ice zones slow your ship!',
-    bossTheme:   'Crystalline Robot',
-    bossHp:      bossHp(6),  // ~1448
-    theme: {
-      skyTop:          0x000A10,
-      skyBottom:       0x001A25,
-      planetBody:      0x4AB8C8,
-      planetShade:     0x204050,
-      planetHighlight: 0x90E0EE,
-      atmosphere:      0x80DEEA,
-      starColor:       0xBBEEFF,
-      detail:          'ice',
+    id:           'venus',
+    name:         'Venus',
+    subtitle:     'THE FURNACE',
+    index:        6,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'acidCloud',    // acid cloud banks drain shield + heat-haze distortion
+    hazardDesc:   'Acid clouds drain shield. Constant movement is survival.',
+    moons: [],   // Venus has no moons — the level is designed around their absence
+    boss: {
+      theme:      'Acid Creature',
+      hp:          bossHp(6),
+      phase2At:   0.5,
+      attackPatterns: ['acidSpray', 'heatSurge', 'cloudBurst'],
     },
+    blazeDensity:    0.80,
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.50,   // thick, hazy
+    heatHaze:        true,
   },
+
+  // ── 8. Mercury ───────────────────────────────────────────────────────────────
   {
-    id:          'neptune',
-    name:        'Neptune',
-    index:       7,
-    accentColor: 0x7C4DFF,   // deep indigo
-    bgTint:      0x08001A,
-    hazardId:    'windGust',
-    hazardDesc:  'Violent wind gusts push you!',
-    bossTheme:   'The Final Dreadnought',
-    bossHp:      bossHp(7),  // ~1882
-    theme: {
-      skyTop:          0x020010,
-      skyBottom:       0x0A0030,
-      planetBody:      0x1A2A80,
-      planetShade:     0x080820,
-      planetHighlight: 0x4060C0,
-      atmosphere:      0x7C4DFF,
-      starColor:       0x9999FF,
-      detail:          'storm',
+    id:           'mercury',
+    name:         'Mercury',
+    subtitle:     'THE ANVIL',
+    index:        7,
+    gameSpeed:    5,                // level tempo multiplier (1 = original pace)
+    hazardId:     'heatColdZones', // alternating heat (shield drain) and cold (slow handling) sweeps
+    hazardDesc:   'Alternating heat and cold zones. Read the field, time your movement.',
+    moons: [],   // Mercury has no moons
+    boss: {
+      theme:      'Solar-Forged Robot',
+      hp:          bossHp(7),
+      phase2At:   0.5,
+      attackPatterns: ['heatBeam', 'coldPulse', 'flareBarrage'],
     },
+    blazeDensity:    0.90,
+    craterCount:     14,
+    craterScale:     0.05,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.05,   // almost no atmosphere
+  },
+
+  // ── 9. The Sun ──────────────────────────────────────────────────────────────
+  {
+    id:           'sun',
+    name:         'The Sun',
+    subtitle:     'THE PRIZE',
+    index:        8,
+    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    hazardId:     'solar',        // constant passive heat drain + flare sweeps + plasma prominences
+    hazardDesc:   'Constant heat drain. Flare sweeps and plasma arcs cross the field.',
+    moons: [],   // no moons
+    boss: {
+      theme:      'Corona Entity',
+      hp:          bossHp(8),    // ≈ 1800
+      phase2At:   0.66,          // 3 phases: >66%, 33–66%, <33%
+      phase3At:   0.33,
+      attackPatterns: [
+        'solarFlare',            // borrowed from Mercury atmosphere
+        'windVortex',            // borrowed from Neptune boss
+        'coronaBlast',           // Sun's own signature move
+      ],
+      threePhase: true,          // Sun boss uses 3 phases, not 2
+    },
+    blazeDensity:    1.0,        // maximum density — white-hot core
+    craterCount:     0,
+    inkAccent:       INK,
+    atmosphereAlpha: 0.80,       // massive corona
+    isSun:           true,       // backdrop uses white-core bleeding to gold
   },
 ];
 
-/** Get planet data by its string id (e.g. 'mercury'). */
-export function getPlanetById(id) {
+/** Return a planet definition by id string. */
+export function getPlanet(id) {
   return PLANETS.find(p => p.id === id);
-}
-
-/** Get the planet that comes after the given one, or null if Neptune. */
-export function getNextPlanet(currentId) {
-  const idx = PLANETS.findIndex(p => p.id === currentId);
-  return idx >= 0 && idx < PLANETS.length - 1 ? PLANETS[idx + 1] : null;
 }

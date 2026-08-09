@@ -1,17 +1,8 @@
 // Asteroid.js — Enemy asteroid. Spawns from the right, drifts left.
-// Large asteroids split into medium ones when destroyed.
+// Stencil Riso: bone irregular polygon, halftone overlay, blaze misprint.
 
-import { BALANCE } from '../data/balance.js';
-
-/** Blend two hex colors. t=0 → a, t=1 → b. */
-function blendColor(a, b, t) {
-  const ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
-  const br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bv = Math.round(ab + (bb - ab) * t);
-  return (r << 16) | (g << 8) | bv;
-}
+import { BALANCE }                        from '../data/balance.js';
+import { drawAsteroid, genAsteroidVertices } from '../systems/StencilArt.js';
 
 export const ASTEROID_SIZE = { SMALL: 'small', MEDIUM: 'medium', LARGE: 'large' };
 
@@ -25,152 +16,88 @@ const SIZE_CFG = {
 export class Asteroid {
   /**
    * @param {Phaser.Scene} scene
-   * @param {number} x         spawn x (usually off-screen right edge)
-   * @param {number} y         spawn y
-   * @param {string} size      ASTEROID_SIZE constant
-   * @param {number} speed     base horizontal drift speed in px/s
+   * @param {string} size   ASTEROID_SIZE constant
+   * @param {number} x      spawn x
+   * @param {number} y      spawn y
    */
-  constructor(scene, x, y, size, speed) {
-    this.scene = scene;
-    this.size  = size;
-    this.cfg   = SIZE_CFG[size];
-    this.x     = x;
-    this.y     = y;
-    this.hp    = this.cfg.hp;
-    this.alive = true;
+  constructor(scene, size, x, y) {
+    this.scene    = scene;
+    this.size     = size;
+    this.sizeLabel = size.toUpperCase();   // 'SMALL' | 'MEDIUM' | 'LARGE'
+    this.cfg      = SIZE_CFG[size];
+    this.x        = x;
+    this.y        = y;
+    this.hp       = this.cfg.hp;
+    this.active   = true;
+    this.damage   = this.cfg.damage;
 
-    // Give each asteroid a slightly different speed and random vertical drift.
-    this.vx = -(speed + Phaser.Math.Between(0, 45));
-    this.vy = Phaser.Math.FloatBetween(-30, 30);
-
-    // Random rotation speed for visual variety.
-    this._rot      = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    this.speed    = 0;  // set by spawner after construction
+    this._vx      = 0;
+    this._vy      = Phaser.Math.FloatBetween(-30, 30);
+    this._rot     = Phaser.Math.FloatBetween(0, Math.PI * 2);
     this._rotSpeed = Phaser.Math.FloatBetween(-1.8, 1.8);
-    this._flash    = 0;
+    this._flashTimer = 0;
 
-    // Generate a jagged polygon shape (unique per asteroid).
-    this._pts = this._makePoints();
+    // Stable vertex array for StencilArt
+    this._vertices = genAsteroidVertices(this.cfg.radius, Math.random());
 
-    // Lightly tint glow toward the planet's accent color (~20% blend).
-    const accent = scene.planetData?.accentColor ?? 0xAA99FF;
-    this._bodyColor = blendColor(0x8C7AE6, accent, 0.20);
-    this._glowColor = blendColor(0xAA99FF, accent, 0.20);
-
-    this.g = scene.add.graphics();
-    this.g.setDepth(6);
+    this.g = scene.add.graphics().setDepth(6);
     this._draw(false);
-  }
-
-  /** Build a jagged polygon by perturbing a circle. */
-  _makePoints() {
-    const r   = this.cfg.radius;
-    const n   = Phaser.Math.Between(7, 12);
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const d = r * Phaser.Math.FloatBetween(0.70, 1.18);
-      pts.push({ x: Math.cos(a) * d, y: Math.sin(a) * d });
-    }
-    return pts;
   }
 
   _draw(flashing) {
     this.g.clear();
-    const bodyColor  = flashing ? 0xFFFFFF : this._bodyColor;
-    const glowColor  = flashing ? 0xFFFFFF : this._glowColor;
-
-    // Rotate the shape points.
-    const cos = Math.cos(this._rot);
-    const sin = Math.sin(this._rot);
-    const pts = this._pts.map(p => ({
-      x: p.x * cos - p.y * sin,
-      y: p.x * sin + p.y * cos,
+    // Rotate vertices
+    const cos = Math.cos(this._rot), sin = Math.sin(this._rot);
+    const rotated = this._vertices.map(v => ({
+      a: v.a + this._rot,
+      r: v.r,
     }));
-
-    // Glow halo (larger, semi-transparent duplicate).
-    this.g.fillStyle(glowColor, 0.12);
-    this.g.fillPoints(pts, true);
-
-    // Main rock body.
-    this.g.fillStyle(bodyColor, 0.88);
-    this.g.fillPoints(pts, true);
-
-    // Outline.
-    this.g.lineStyle(1.5, glowColor, 0.70);
-    this.g.strokePoints(pts, true);
+    drawAsteroid(this.g, this.x, this.y, this.cfg.radius, rotated, flashing);
   }
 
   update(delta) {
-    if (!this.alive) return;
+    if (!this.active) return;
     const dt = delta / 1000;
 
-    this.x     += this.vx * dt;
-    this.y     += this.vy * dt;
-    this._rot  += this._rotSpeed * dt;
-    if (this._flash > 0) this._flash -= delta;
+    if (this._vx === 0) {
+      // First frame: apply speed set by spawner
+      this._vx = -(this.speed + Phaser.Math.Between(0, 45));
+    }
 
-    this.g.x = this.x;
-    this.g.y = this.y;
-    this._draw(this._flash > 0);
+    this.x    += this._vx * dt;
+    this.y    += this._vy * dt;
+    this._rot += this._rotSpeed * dt;
 
-    // Bounce off top and bottom screen edges.
+    if (this._flashTimer > 0) this._flashTimer -= delta;
+
+    this._draw(this._flashTimer > 0);
+
+    // Bounce off screen edges
     const { height } = this.scene.scale;
     const r = this.cfg.radius;
-    if (this.y < r  && this.vy < 0) this.vy *= -1;
-    if (this.y > height - r && this.vy > 0) this.vy *= -1;
+    if (this.y < r && this._vy < 0) this._vy *= -1;
+    if (this.y > height - r && this._vy > 0) this._vy *= -1;
 
-    // Remove once it has drifted past the left edge.
     if (this.x < -(r * 3)) this.destroy();
   }
 
-  /** Circle bounds for collision. */
-  getBounds() {
-    return { x: this.x, y: this.y, r: this.cfg.radius };
+  /** Returns true if a point overlaps this asteroid (circle check). */
+  overlapsPoint(px, py) {
+    const dx = px - this.x, dy = py - this.y;
+    return dx * dx + dy * dy <= this.cfg.radius * this.cfg.radius;
   }
 
-  /** Deal weapon damage. Returns true if the asteroid should be destroyed. */
-  takeDamage(dmg) {
-    this.hp   -= dmg;
-    this._flash = 140;
-    return this.hp <= 0;
-  }
-
-  /**
-   * Destroy this asteroid and return any child fragments (for large → medium split).
-   * @param {Function} onDropPickup  called with (x, y) if a pickup should spawn
-   * @returns {Asteroid[]} child asteroids to add to the world
-   */
-  explode(onDropPickup) {
-    this.alive = false;
-    this.g.destroy();
-
-    const children = [];
-
-    // Large asteroids shatter into medium fragments.
-    if (this.size === ASTEROID_SIZE.LARGE) {
-      for (let i = 0; i < BALANCE.ASTEROID_SPLIT_INTO; i++) {
-        const ox    = Phaser.Math.Between(-22, 22);
-        const oy    = Phaser.Math.Between(-22, 22);
-        const child = new Asteroid(
-          this.scene,
-          this.x + ox,
-          this.y + oy,
-          ASTEROID_SIZE.MEDIUM,
-          Math.abs(this.vx) * 0.85,
-        );
-        // Give split pieces some diverging vertical velocity.
-        child.vy += (i === 0 ? -40 : 40);
-        children.push(child);
-      }
-    }
-
-    if (onDropPickup) onDropPickup(this.x, this.y);
-
-    return children;
+  /** Hit with damage. Returns true if destroyed. */
+  hit(damage) {
+    this.hp -= damage;
+    this._flashTimer = 140;
+    if (this.hp <= 0) { this.destroy(); return true; }
+    return false;
   }
 
   destroy() {
-    this.alive = false;
-    try { this.g.destroy(); } catch (e) {}
+    this.active = false;
+    try { this.g.destroy(); } catch {}
   }
 }

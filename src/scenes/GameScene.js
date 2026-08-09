@@ -1,81 +1,98 @@
-// GameScene.js — Main gameplay scene.
-// Runs through the asteroid phase, then the boss fight.
-// Handles all collisions, the HUD, pause menu, touch controls, and particles.
+// GameScene.js — Main gameplay for Solar Blaster V2.
+// Seamlessly runs three phases via PhaseManager: Approach → Descent → Conquest.
+// HUD matches hud.html (Stencil Riso layout).
+// Ship delegates weapons/reload to WeaponSystem.
 
-import { BALANCE }         from '../data/balance.js';
-import { PLANETS, getPlanetById, getNextPlanet } from '../data/planets.js';
-import { WEAPON_IDS }      from '../data/weapons.js';
-import { SaveData }        from '../systems/SaveData.js';
-import { DifficultyCurve } from '../systems/DifficultyCurve.js';
-import { HazardSystem }    from '../systems/HazardSystem.js';
-import { AudioSystem }     from '../systems/AudioSystem.js';
-import { PlanetBackdrop }  from '../systems/PlanetBackdrop.js';
-import { Ship }            from '../entities/Ship.js';
+import { BALANCE }          from '../data/balance.js';
+import { PLANETS, getPlanet } from '../data/planets.js';
+import { SaveData }          from '../systems/SaveData.js';
+import { DifficultyCurve }   from '../systems/DifficultyCurve.js';
+import { HazardSystem }      from '../systems/HazardSystem.js';
+import { AudioSystem }       from '../systems/AudioSystem.js';
+import { PhaseManager, PHASE } from '../systems/PhaseManager.js';
+import { Ship }              from '../entities/Ship.js';
 import { Asteroid, ASTEROID_SIZE } from '../entities/Asteroid.js';
-import { Boss }            from '../entities/Boss.js';
+import { Moon }              from '../entities/Moon.js';
+import { Boss }              from '../entities/Boss.js';
 import { Pickup, PICKUP_TYPE } from '../entities/Pickup.js';
+import { Projectile }        from '../entities/Projectile.js';
+import {
+  C, drawPlanet, drawHullBar, drawApproachMeter, drawPlate,
+  drawPickupCoin, drawPickupGem, drawPickupShield, drawPickupAmmo, drawPickupRapidFire,
+} from '../systems/StencilArt.js';
 
-// Internal state machine constants.
-const STATE = { PLAYING: 'playing', BOSS: 'boss', WIN: 'win', DEAD: 'dead', PAUSED: 'paused' };
+const STATE = { PLAYING: 'playing', WIN: 'win', DEAD: 'dead', PAUSED: 'paused' };
 
 export class GameScene extends Phaser.Scene {
   constructor() { super({ key: 'GameScene' }); }
 
-  // ── Receive data from PlanetSelectScene ────────────────────────────────────
+  // ── Init ────────────────────────────────────────────────────────────────────
+
   init(data) {
-    this.planetData    = getPlanetById(data.planetId) || PLANETS[0];
-    this.gameState     = STATE.PLAYING;
-    this._prevState    = STATE.PLAYING;
-    this.score         = 0;
-    this.coinsThisRun  = 0;
-    this.elapsed       = 0;   // ms into the asteroid phase
+    this.planetData      = getPlanet(data.planetId) || PLANETS[0];
+    this.gameState       = STATE.PLAYING;
+    this.score           = 0;
+    this.coinsThisRun    = 0;
     this._asteroidTimer  = 0;
     this._shakeTimer     = 0;
-    this._shakeAmount    = 0;
-    this._particles      = [];
-    this._bossProjectiles = [];
-    this.asteroids     = [];
-    this.projectiles   = [];
-    this.pickups       = [];
-    this.boss          = null;
-    this._winDone      = false;
-    this._deadDone     = false;
+    this._shakeAmt       = 0;
+    this._winDone        = false;
+    this._deadDone       = false;
 
-    this.backdrop = null;
+    this.asteroids    = [];
+    this.projectiles  = [];
+    this.pickups      = [];
+    this.moons        = [];
+    this.boss         = null;
+    this._bossProj    = [];
+    this._particles   = [];
 
-    // Phaser reuses this scene instance — clear HUD refs so we never setText on
-    // destroyed Text objects from the previous run.
-    this._scoreTxt = null;
-    this._coinTxt = null;
-    this._wepTxt = null;
-    this._phaseTxt = null;
+    // HUD display objects (cleared between runs)
+    this._hudG      = null;
+    this._scoreTxt  = null;
+    this._coinTxt   = null;
+    this._wepChip   = null;
+    this._ammoTxt   = null;
+    this._reloadTxt = null;
+    this._distTxt   = null;
     this._shieldTxt = null;
-    this._shieldBarG = null;
-    this._minimapG = null;
+    this._planetNameTxt = null;
+    this._bossHpG   = null;
     this._pauseGroup = null;
   }
 
-  // ── Build everything ───────────────────────────────────────────────────────
+  // ── Create ──────────────────────────────────────────────────────────────────
+
   create() {
     const { width, height } = this.scale;
 
-    // Ensure audio system exists.
+    // Audio
     if (!window.gameAudio) window.gameAudio = new AudioSystem(this);
     this.audio = window.gameAudio;
     this.audio.setMuted(this.game.registry.get('muted') || false);
     this.audio.resume();
 
-    // ── Backdrop (sky, planet globe, atmosphere, tinted stars) ───────────────
-    this.backdrop = new PlanetBackdrop(this, this.planetData);
+    // ── Planet backdrop graphics layer (behind everything) ───────────────────
+    this._backdropG = this.add.graphics().setDepth(1);
 
-    // ── Hazard system ─────────────────────────────────────────────────────────
-    this.hazard = new HazardSystem(this, this.planetData.hazardId, this.planetData.accentColor);
+    // ── Starfield (ink ground + paper grain) ─────────────────────────────────
+    this._buildStarfield();
 
-    // ── Ship ─────────────────────────────────────────────────────────────────
+    // ── Phase manager ─────────────────────────────────────────────────────────
+    this.phases = new PhaseManager(this, this.planetData);
+
+    // ── Hazard ────────────────────────────────────────────────────────────────
+    this.hazard = new HazardSystem(this, this.planetData.hazardId, 0);
+
+    // ── Difficulty curve ──────────────────────────────────────────────────────
+    this.difficulty = new DifficultyCurve(this.planetData.index, this.planetData.gameSpeed);
+
+    // ── Ship ──────────────────────────────────────────────────────────────────
     this.ship = new Ship(this);
 
-    // ── Particles graphics layer ─────────────────────────────────────────────
-    this._particleG = this.add.graphics().setDepth(11);
+    // ── Ship events ───────────────────────────────────────────────────────────
+    this.events.on('shipDestroyed', this._onShipDestroyed, this);
+    this.events.on('conquestComplete', this._onConquestComplete, this);
 
     // ── HUD ───────────────────────────────────────────────────────────────────
     this._buildHUD();
@@ -83,629 +100,595 @@ export class GameScene extends Phaser.Scene {
     // ── Touch controls ────────────────────────────────────────────────────────
     this._buildTouchControls();
 
-    // ── Pause key ────────────────────────────────────────────────────────────
-    this._onPauseEsc = () => this._togglePause();
-    this._onPauseP   = () => this._togglePause();
-    this.input.keyboard.on('keydown-ESC', this._onPauseEsc);
-    this.input.keyboard.on('keydown-P',   this._onPauseP);
+    // ── Keyboard shortcuts ────────────────────────────────────────────────────
+    this._onPause = () => this._togglePause();
+    this.input.keyboard.on('keydown-ESC', this._onPause);
+    this.input.keyboard.on('keydown-P',   this._onPause);
 
-    // ── Pause menu (hidden until paused) ──────────────────────────────────────
+    // ── Pause menu ────────────────────────────────────────────────────────────
     this._buildPauseMenu();
 
-    // Clean up shared listeners / entities when leaving this scene (next level without reload).
     this.events.once('shutdown', () => this._shutdown());
 
-    // ── Start music ───────────────────────────────────────────────────────────
     this.audio.startMusic(false);
   }
 
-  /** Tear down input, hazards, and entities so a fresh GameScene can start cleanly. */
-  _shutdown() {
-    if (this.audio) this.audio.stopMusic();
+  // ── Starfield ────────────────────────────────────────────────────────────────
 
-    if (this.backdrop) {
-      this.backdrop.destroy();
-      this.backdrop = null;
-    }
-
-    if (this.input && this.input.keyboard) {
-      if (this._onPauseEsc) this.input.keyboard.off('keydown-ESC', this._onPauseEsc);
-      if (this._onPauseP)   this.input.keyboard.off('keydown-P',   this._onPauseP);
-    }
-
-    if (this.ship) {
-      this.ship.destroy();
-      this.ship = null;
-    }
-    if (this.hazard) {
-      this.hazard.destroy();
-      this.hazard = null;
-    }
-    if (this.boss) {
-      this.boss.destroy();
-      this.boss = null;
-    }
-
-    (this.asteroids || []).forEach(a => a.destroy());
-    (this.projectiles || []).forEach(p => p.destroy());
-    (this.pickups || []).forEach(pk => pk.destroy());
-    (this._bossProjectiles || []).forEach(p => { try { p.g.destroy(); } catch (e) {} });
-
-    this.asteroids = [];
-    this.projectiles = [];
-    this.pickups = [];
-    this._bossProjectiles = [];
-    this._particles = [];
-
-    if (this.cameras && this.cameras.main) this.cameras.main.setScroll(0, 0);
-  }
-
-  // ── HUD ────────────────────────────────────────────────────────────────────
-
-  _buildHUD() {
-    const { width, height } = this.scale;
-    const depth = 20;
-    const style = (sz, col = '#00F5FF') => ({
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   sz, color: col,
-    });
-
-    // Score.
-    this._scoreLbl  = this.add.text(16, 12, 'SCORE', style('13px', '#557788')).setDepth(depth);
-    this._scoreTxt  = this.add.text(16, 26, '0',     style('22px')).setDepth(depth);
-
-    // Coins this run.
-    this._coinLbl   = this.add.text(180, 12, 'COINS', style('13px', '#886600')).setDepth(depth);
-    this._coinTxt   = this.add.text(180, 26, '0',     style('22px', '#FFD93D')).setDepth(depth);
-
-    // Weapon indicator.
-    this._wepTxt    = this.add.text(340, 26, '',      style('18px', '#FF2EC4')).setDepth(depth);
-
-    // Planet label.
-    const accentHex = '#' + this.planetData.accentColor.toString(16).padStart(6, '0');
-    this.add.text(width - 14, 12, this.planetData.name.toUpperCase(), style('14px', accentHex))
-      .setOrigin(1, 0).setDepth(depth);
-
-    // Shield bar graphics.
-    this._shieldBarG = this.add.graphics().setDepth(depth);
-
-    // Mini-map track.
-    this._minimapG = this.add.graphics().setDepth(depth);
-
-    // Phase label (shows "BOSS INCOMING!" etc.)
-    this._phaseTxt = this.add.text(width / 2, 18, '', style('22px', '#FF2EC4'))
-      .setOrigin(0.5, 0).setDepth(depth + 1);
-
-    // Shield HP number (must be created here — never lazy-cache across scene restarts).
-    this._shieldTxt = this.add.text(16 + 260 + 8, 56 - 2, '', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '13px', color: '#00E5A0',
-    }).setDepth(depth + 1);
-  }
-
-  /** True if a Phaser display object is still usable (not destroyed by a prior scene run). */
-  _hudAlive(obj) {
-    return !!(obj && obj.scene && obj.active !== false && !obj.destroyed);
-  }
-
-  _drawHUD() {
-    if (!this.ship || !this._hudAlive(this._scoreTxt) || !this._hudAlive(this._shieldTxt)
-        || !this._hudAlive(this._shieldBarG) || !this._hudAlive(this._minimapG)) {
-      return;
-    }
-
+  _buildStarfield() {
     const { width, height } = this.scale;
 
-    // Score + coins.
-    this._scoreTxt.setText(String(this.score));
-    this._coinTxt.setText(String(this.coinsThisRun));
+    const g = this.add.graphics().setDepth(0);
 
-    // Weapon name.
-    const weaponNames = ['LASER', 'SPREAD', 'MISSILE'];
-    this._wepTxt.setText(`[${this.ship.weaponIndex + 1}] ${weaponNames[this.ship.weaponIndex]}`);
+    // Ink ground
+    g.fillStyle(C.INK, 1);
+    g.fillRect(0, 0, width, height);
 
-    // ── Shield bar ──────────────────────────────────────────────────────────
-    const barX = 16, barY = 56, barW = 260, barH = 14;
-    const frac  = this.ship.shield / this.ship.maxShield;
-    this._shieldBarG.clear();
-    // Background.
-    this._shieldBarG.fillStyle(0x112233, 0.8);
-    this._shieldBarG.fillRect(barX, barY, barW, barH);
-    // Fill.
-    const shieldCol = frac > 0.5 ? 0x00E5A0 : (frac > 0.25 ? 0xFFD93D : 0xFF2222);
-    this._shieldBarG.fillStyle(shieldCol, 0.9);
-    this._shieldBarG.fillRect(barX, barY, barW * frac, barH);
-    // Border.
-    this._shieldBarG.lineStyle(1.5, 0x00E5A0, 0.5);
-    this._shieldBarG.strokeRect(barX, barY, barW, barH);
-
-    // ── Mini-map progress track ─────────────────────────────────────────────
-    const mmX = width - 220, mmY = 42, mmW = 200, mmH = 12;
-    this._minimapG.clear();
-    // Track.
-    this._minimapG.fillStyle(0x112233, 0.7);
-    this._minimapG.fillRect(mmX, mmY, mmW, mmH);
-    // Progress fill.
-    const prog = this.gameState === STATE.BOSS || this.gameState === STATE.WIN
-      ? 1 : Math.min(1, this.elapsed / BALANCE.LEVEL_DURATION);
-    this._minimapG.fillStyle(this.planetData.accentColor, 0.6);
-    this._minimapG.fillRect(mmX, mmY, mmW * prog, mmH);
-    // Ship icon on track.
-    const iconX = mmX + mmW * prog;
-    this._minimapG.fillStyle(this.ship.skinColor || 0x00F5FF, 1);
-    this._minimapG.fillTriangle(iconX, mmY - 2, iconX - 5, mmY + mmH + 2, iconX + 5, mmY + mmH + 2);
-    // Boss icon at end.
-    this._minimapG.fillStyle(0xFF2EC4, 0.8);
-    this._minimapG.fillCircle(mmX + mmW - 2, mmY + mmH / 2, 6);
-    // Border.
-    this._minimapG.lineStyle(1, 0x336677, 0.6);
-    this._minimapG.strokeRect(mmX, mmY, mmW, mmH);
-
-    // Boss HP bar (only during boss fight).
-    if (this.gameState === STATE.BOSS && this.boss && this.boss.alive) {
-      const bx = width / 2 - 200, by = height - 38, bw = 400, bh = 16;
-      this._shieldBarG.fillStyle(0x110000, 0.8);
-      this._shieldBarG.fillRect(bx, by, bw, bh);
-      const bhp = this.boss.hp / this.boss.maxHp;
-      this._shieldBarG.fillStyle(0xFF2EC4, 0.9);
-      this._shieldBarG.fillRect(bx, by, bw * bhp, bh);
-      this._shieldBarG.lineStyle(1.5, 0xFF2EC4, 0.6);
-      this._shieldBarG.strokeRect(bx, by, bw, bh);
-      if (this._hudAlive(this._phaseTxt)) {
-        this._phaseTxt.setText(this.boss.state === 'phase2' ? '⚠ PHASE 2' : '');
+    // Bone paper grain dots (7px pitch, very faint)
+    g.fillStyle(C.BONE, 0.12);
+    for (let y = 0; y < height; y += 7) {
+      for (let x = 0; x < width; x += 7) {
+        g.fillCircle(x + 1, y + 1, 1);
       }
     }
 
-    this._shieldTxt.setText(`${Math.ceil(this.ship.shield)}/${this.ship.maxShield}`);
+    // A few brighter star points
+    g.fillStyle(C.BONE, 0.55);
+    const rng = Phaser.Math.RND;
+    for (let i = 0; i < 40; i++) {
+      g.fillCircle(rng.integerInRange(0, width), rng.integerInRange(0, height), 1.2);
+    }
   }
 
-  // ── Touch Controls ─────────────────────────────────────────────────────────
+  // ── HUD ─────────────────────────────────────────────────────────────────────
+  // Layout matches hud.html: top-left cluster, top-right plate, bottom-left hull.
+
+  _buildHUD() {
+    const { width, height } = this.scale;
+    const D = 20;
+    const lbl = (x, y, t) => this.add.text(x, y, t, {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: '#ff4d17',
+      fontStyle: 'bold', letterSpacing: 5,
+    }).setDepth(D).setAlpha(1);
+    const num = (x, y, t) => this.add.text(x, y, t, {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '44px', color: '#efe9dd',
+    }).setDepth(D);
+
+    // Top-left: SCORE / COINS / ARMED
+    lbl(30, 28, 'SCORE');
+    this._scoreTxt = num(30, 38, '0').setFontSize('32px');
+
+    lbl(174, 28, 'COINS');
+    this._coinTxt = num(174, 38, '0').setFontSize('32px');
+
+    lbl(318, 28, 'ARMED');
+    this._wepChip = this.add.text(318, 42, '01 LASER', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '18px', color: '#efe9dd',
+      padding: { x: 6, y: 4 },
+    }).setDepth(D);
+    // Chip border (2px bone stencil outline)
+    this._wepChipG = this.add.graphics().setDepth(D - 1);
+
+    // Ammo + reload prompt (near chip)
+    this._ammoTxt = this.add.text(318, 66, '', {
+      fontFamily: "'Space Mono', monospace",
+      fontSize: '11px', color: 'rgba(239,233,221,0.7)',
+    }).setDepth(D);
+    this._reloadTxt = this.add.text(318, 66, 'PRESS R TO RELOAD', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: '#ff4d17',
+      fontStyle: 'bold', letterSpacing: 4,
+    }).setDepth(D + 1).setVisible(false);
+
+    // Top-right: planet name + approach meter (on an ink plate)
+    this._hudG = this.add.graphics().setDepth(D - 1);
+    this._planetNameTxt = this.add.text(width - 30, 28, this.planetData.name.toUpperCase(), {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '24px', color: '#efe9dd',
+    }).setOrigin(1, 0).setDepth(D);
+    lbl(width - 30 - 230, 58, 'APPROACH').setOrigin(0, 0.5);
+    this._approachPct = 0;
+
+    // Distance readout
+    this._distTxt = this.add.text(width - 30, 80, 'DIST 1000 km', {
+      fontFamily: "'Space Mono', monospace",
+      fontSize: '11px', color: 'rgba(239,233,221,0.55)',
+    }).setOrigin(1, 0).setDepth(D);
+
+    // Bottom-left: HULL bar
+    this._shieldLbl = lbl(30, height - 52, 'HULL');
+    this._shieldTxt = this.add.text(330, height - 52, '', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: 'rgba(239,233,221,0.6)',
+      letterSpacing: 4, fontStyle: 'bold',
+    }).setOrigin(1, 0).setDepth(D);
+    this._shieldBarG = this.add.graphics().setDepth(D);
+
+    // Boss HP bar (hidden until Conquest)
+    this._bossHpG   = this.add.graphics().setDepth(D);
+    this._bossHpLbl = lbl(width / 2, height - 52, '').setOrigin(0.5, 0);
+    this._bossHpLbl.setVisible(false);
+
+    // Objective banner (shown at start of each phase)
+    this._bannerTxt = this.add.text(width / 2, height * 0.42, '', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '28px', color: '#efe9dd',
+    }).setOrigin(0.5).setDepth(D + 2).setAlpha(0);
+
+    this._showBanner(`${this.planetData.name.toUpperCase()} — ${this.planetData.subtitle}`);
+  }
+
+  _showBanner(text, duration = 2500) {
+    if (!this._bannerTxt) return;
+    this._bannerTxt.setText(text).setAlpha(1);
+    this.tweens.add({
+      targets: this._bannerTxt,
+      alpha: 0,
+      delay: duration - 500,
+      duration: 500,
+    });
+  }
+
+  // ── Touch Controls ────────────────────────────────────────────────────────────
 
   _buildTouchControls() {
     const { width, height } = this.scale;
-    const depth = 22;
+    const D = 22;
 
-    // Fire button — large circle bottom-right.
-    const fbX = width - 75, fbY = height - 75;
-    const fireG = this.add.graphics().setDepth(depth);
-    const drawFireBtn = (pressed) => {
+    // FIRE button — bone outlined circle, blaze label
+    const fbX = width - 80, fbY = height - 80;
+    const fireG = this.add.graphics().setDepth(D);
+    const redrawFire = (pressed) => {
       fireG.clear();
-      fireG.fillStyle(0x00F5FF, pressed ? 0.45 : 0.20);
-      fireG.fillCircle(fbX, fbY, 46);
-      fireG.lineStyle(2.5, 0x00F5FF, pressed ? 1 : 0.55);
+      fireG.lineStyle(2, C.BONE, pressed ? 1 : 0.55);
       fireG.strokeCircle(fbX, fbY, 46);
+      if (pressed) { fireG.fillStyle(C.BLAZE, 0.25); fireG.fillCircle(fbX, fbY, 46); }
     };
-    drawFireBtn(false);
+    redrawFire(false);
     this.add.text(fbX, fbY, 'FIRE', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '14px', color: '#00F5FF',
-    }).setOrigin(0.5).setDepth(depth + 1);
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '14px', color: '#ff4d17', fontStyle: 'bold', letterSpacing: 4,
+    }).setOrigin(0.5).setDepth(D + 1);
+    const fireZone = this.add.circle(fbX, fbY, 46, 0, 0).setDepth(D + 2).setInteractive();
+    fireZone.on('pointerdown', () => { redrawFire(true);  this.ship?.setTouchFire(true);  });
+    fireZone.on('pointerup',   () => { redrawFire(false); this.ship?.setTouchFire(false); });
+    fireZone.on('pointerout',  () => { redrawFire(false); this.ship?.setTouchFire(false); });
 
-    // Interactive zone.
-    const fireZone = this.add.circle(fbX, fbY, 46, 0, 0).setDepth(depth + 2).setInteractive();
-    fireZone.on('pointerdown', () => { drawFireBtn(true);  if (this.ship) this.ship.setTouchFire(true);  });
-    fireZone.on('pointerup',   () => { drawFireBtn(false); if (this.ship) this.ship.setTouchFire(false); });
-    fireZone.on('pointerout',  () => { drawFireBtn(false); if (this.ship) this.ship.setTouchFire(false); });
+    // RELOAD button — teal outlined, below FIRE
+    const rbX = width - 80, rbY = height - 170;
+    const reloadG = this.add.graphics().setDepth(D);
+    reloadG.lineStyle(2, C.TEAL, 0.65);
+    reloadG.strokeCircle(rbX, rbY, 36);
+    this.add.text(rbX, rbY, 'RELOAD', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: '#0f7a6a', fontStyle: 'bold', letterSpacing: 3,
+    }).setOrigin(0.5).setDepth(D + 1);
+    const reloadZone = this.add.circle(rbX, rbY, 36, 0, 0).setDepth(D + 2).setInteractive();
+    reloadZone.on('pointerdown', () => this.ship?.setTouchReload());
 
-    // Weapon switch buttons — 1, 2, 3 — bottom left area.
+    // Weapon switch — 3 bone-outlined chips
     const wLabels = ['LAS', 'PLM', 'MSL'];
-    const wColors = [0x00F5FF, 0xFF2EC4, 0xFFD93D];
     wLabels.forEach((label, i) => {
-      const bx = 68 + i * 72, by = height - 62;
-      const wg  = this.add.graphics().setDepth(depth);
-      wg.fillStyle(wColors[i], 0.20);
-      wg.fillRoundedRect(bx - 28, by - 22, 56, 44, 6);
-      wg.lineStyle(1.5, wColors[i], 0.55);
-      wg.strokeRoundedRect(bx - 28, by - 22, 56, 44, 6);
-      this.add.text(bx, by - 6, String(i + 1), {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '16px', color: '#' + wColors[i].toString(16).padStart(6, '0'),
-      }).setOrigin(0.5).setDepth(depth + 1);
+      const bx = 68 + i * 72, by = height - 65;
+      const wg = this.add.graphics().setDepth(D);
+      wg.lineStyle(2, C.BONE, 0.50);
+      wg.strokeRect(bx - 28, by - 22, 56, 44);
+      this.add.text(bx, by - 8, String(i + 1), {
+        fontFamily: "'Saira Stencil One', sans-serif",
+        fontSize: '16px', color: '#efe9dd',
+      }).setOrigin(0.5).setDepth(D + 1);
       this.add.text(bx, by + 10, label, {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '11px', color: '#' + wColors[i].toString(16).padStart(6, '0'),
-      }).setOrigin(0.5).setDepth(depth + 1);
-
-      const zone = this.add.rectangle(bx, by, 56, 44, 0, 0)
-        .setDepth(depth + 2).setInteractive();
-      zone.on('pointerdown', () => { if (this.ship) this.ship.setWeapon(i); });
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: '11px', color: '#efe9dd', letterSpacing: 3, fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(D + 1);
+      const zone = this.add.rectangle(bx, by, 56, 44, 0, 0).setDepth(D + 2).setInteractive();
+      zone.on('pointerdown', () => this.ship?.setWeapon(i));
     });
 
-    // Pause button — top-right corner.
-    const pauseBtn = this.add.text(width - 16, 8, '⏸', {
-      fontSize: '24px',
-    }).setOrigin(1, 0).setDepth(depth + 2).setInteractive({ useHandCursor: true });
+    // Pause button
+    const pauseBtn = this.add.text(width - 16, 10, '||', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '20px', color: '#efe9dd', fontStyle: 'bold',
+    }).setOrigin(1, 0).setDepth(D + 2).setInteractive({ useHandCursor: true });
     pauseBtn.on('pointerdown', () => this._togglePause());
   }
 
-  // ── Pause Menu ─────────────────────────────────────────────────────────────
+  // ── Pause Menu ────────────────────────────────────────────────────────────────
 
   _buildPauseMenu() {
     const { width, height } = this.scale;
     const cx = width / 2, cy = height / 2;
-    const depth = 30;
+    const D = 30;
 
-    // Overlay.
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000011, 0.72).setOrigin(0).setDepth(depth);
-    const panel   = this.add.graphics().setDepth(depth + 1);
-    panel.fillStyle(0x050A1A, 0.95);
-    panel.fillRoundedRect(cx - 180, cy - 160, 360, 320, 12);
-    panel.lineStyle(2, 0x00F5FF, 0.5);
-    panel.strokeRoundedRect(cx - 180, cy - 160, 360, 320, 12);
+    const overlay = this.add.rectangle(0, 0, width, height, C.INK, 0.82)
+      .setOrigin(0).setDepth(D).setVisible(false);
+    const panelG = this.add.graphics().setDepth(D + 1).setVisible(false);
+    panelG.fillStyle(C.INK_DEEP, 0.98);
+    panelG.fillRect(cx - 180, cy - 150, 360, 300);
+    panelG.lineStyle(2, C.BONE, 0.55);
+    panelG.strokeRect(cx - 180, cy - 150, 360, 300);
 
-    const title = this.add.text(cx, cy - 125, 'PAUSED', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '32px', color: '#00F5FF',
-    }).setOrigin(0.5).setDepth(depth + 2);
+    const title = this.add.text(cx, cy - 118, 'PAUSED', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '32px', color: '#efe9dd',
+    }).setOrigin(0.5).setDepth(D + 2).setVisible(false);
 
-    const btnStyle = (col) => ({
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '20px', color: col,
-    });
+    const btnStyle = { fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '20px', fontStyle: 'bold', color: '#efe9dd', letterSpacing: 4 };
 
-    const resume  = this.add.text(cx, cy - 55, 'RESUME',        btnStyle('#00F5FF')).setOrigin(0.5).setDepth(depth + 2).setInteractive({ useHandCursor: true });
-    const restart = this.add.text(cx, cy + 0,  'RESTART LEVEL', btnStyle('#FF2EC4')).setOrigin(0.5).setDepth(depth + 2).setInteractive({ useHandCursor: true });
-    const mute    = this.add.text(cx, cy + 55, '',               btnStyle('#FFD93D')).setOrigin(0.5).setDepth(depth + 2).setInteractive({ useHandCursor: true });
-    const menu    = this.add.text(cx, cy + 110,'PLANET SELECT',  btnStyle('#88AABB')).setOrigin(0.5).setDepth(depth + 2).setInteractive({ useHandCursor: true });
+    const resume  = this.add.text(cx, cy - 55, 'RESUME',        btnStyle).setOrigin(0.5).setDepth(D + 2).setInteractive({ useHandCursor: true }).setVisible(false);
+    const restart = this.add.text(cx, cy,      'RESTART LEVEL', { ...btnStyle, color: '#ff4d17' }).setOrigin(0.5).setDepth(D + 2).setInteractive({ useHandCursor: true }).setVisible(false);
+    const muteBtn = this.add.text(cx, cy + 55, '',              btnStyle).setOrigin(0.5).setDepth(D + 2).setInteractive({ useHandCursor: true }).setVisible(false);
+    const menuBtn = this.add.text(cx, cy + 110,'PLANET SELECT', { ...btnStyle, color: 'rgba(239,233,221,0.55)' }).setOrigin(0.5).setDepth(D + 2).setInteractive({ useHandCursor: true }).setVisible(false);
 
-    const updateMuteLabel = () => {
+    const allItems = [overlay, panelG, title, resume, restart, muteBtn, menuBtn];
+
+    const updateMute = () => {
       const m = this.game.registry.get('muted') || false;
-      mute.setText(m ? 'SOUND: OFF' : 'SOUND: ON');
+      muteBtn.setText(m ? 'SOUND: OFF' : 'SOUND: ON');
     };
-    updateMuteLabel();
+    updateMute();
 
     resume.on('pointerdown',  () => this._togglePause());
-    restart.on('pointerdown', () => {
-      this.audio.stopMusic();
-      this.scene.restart({ planetId: this.planetData.id });
-    });
-    mute.on('pointerdown', () => {
+    restart.on('pointerdown', () => { this.audio.stopMusic(); this.scene.restart({ planetId: this.planetData.id }); });
+    muteBtn.on('pointerdown', () => {
       const m = !this.game.registry.get('muted');
       this.game.registry.set('muted', m);
       if (this.audio) this.audio.setMuted(m);
-      updateMuteLabel();
+      updateMute();
     });
-    menu.on('pointerdown', () => {
-      this.audio.stopMusic();
-      this.scene.start('PlanetSelectScene');
-    });
+    menuBtn.on('pointerdown', () => { this.audio.stopMusic(); this.scene.start('PlanetSelectScene'); });
 
-    this._pauseGroup = [overlay, panel, title, resume, restart, mute, menu];
-    this._pauseGroup.forEach(o => o.setVisible(false));
+    this._pauseItems    = allItems;
+    this._pauseVisible  = false;
   }
 
   _togglePause() {
-    if (this.gameState === STATE.WIN || this.gameState === STATE.DEAD) return;
-    if (this.gameState === STATE.PAUSED) {
-      this.gameState = this._prevState;
-      this._pauseGroup.forEach(o => o.setVisible(false));
-      this.audio.startMusic(this.gameState === STATE.BOSS);
+    this._pauseVisible = !this._pauseVisible;
+    this._pauseItems.forEach(o => o.setVisible(this._pauseVisible));
+    this.physics && this.physics.world && (this._pauseVisible
+      ? this.physics.world.pause()
+      : this.physics.world.resume());
+    if (this._pauseVisible) {
+      this.gameState = STATE.PAUSED;
     } else {
-      this._prevState = this.gameState;
-      this.gameState  = STATE.PAUSED;
-      this._pauseGroup.forEach(o => o.setVisible(true));
-      this.audio.stopMusic();
+      this.gameState = STATE.PLAYING;
     }
   }
 
-  // ── Main game loop ─────────────────────────────────────────────────────────
+  // ── Update ────────────────────────────────────────────────────────────────────
 
   update(time, delta) {
     if (this.gameState === STATE.PAUSED) return;
-
-    const { width, height } = this.scale;
-    const dt = delta / 1000;
-
-    // Scroll backdrop (stars + planet parallax).
-    if (this.backdrop) this.backdrop.update(delta);
-
-    // Screen shake countdown.
-    if (this._shakeTimer > 0) {
-      this._shakeTimer -= delta;
-      const dx = Phaser.Math.Between(-this._shakeAmount, this._shakeAmount);
-      const dy = Phaser.Math.Between(-this._shakeAmount, this._shakeAmount);
-      this.cameras.main.setScroll(dx, dy);
-    } else {
-      this.cameras.main.setScroll(0, 0);
+    if (this.gameState === STATE.WIN || this.gameState === STATE.DEAD) {
+      this._runEndSequence(delta);
+      return;
     }
 
-    switch (this.gameState) {
-      case STATE.PLAYING: this._updatePlaying(delta, dt); break;
-      case STATE.BOSS:    this._updateBoss(delta, dt);    break;
-      case STATE.WIN:
-      case STATE.DEAD:    /* handled by timed transitions below */ break;
-    }
-
-    this._updateParticles(dt);
-    if (this.ship && (this.ship.alive || this.gameState === STATE.WIN)) this._drawHUD();
-  }
-
-  // ── Asteroid phase ─────────────────────────────────────────────────────────
-
-  _updatePlaying(delta, dt) {
-    this.elapsed += delta;
-
-    // Hazard update and forces.
-    this.hazard.update(delta);
-    const rawForces = this.ship.alive
-      ? this.hazard.getForces(this.ship.x, this.ship.y)
-      : { x: 0, y: 0, speedMult: 1 };
-
-    // Green Scout's Evade Protocol reduces hazard push forces.
-    const resist = this.ship.hazardResistance || 0;
-    const forces = {
-      x:         rawForces.x * (1 - resist),
-      y:         rawForces.y * (1 - resist),
-      speedMult: rawForces.speedMult,
-    };
-
-    // Apply solar-flare damage.
-    if (this.hazard.hazardId === 'solarFlare' && this.hazard.isShipInFlare(this.ship.y)) {
-      if (this.ship.takeDamage(22 * dt)) {
-        this.audio.playShieldHit();
+    // ── Phase update ──────────────────────────────────────────────────────────
+    const phaseEvents = this.phases.update(delta);
+    for (const ev of phaseEvents) {
+      if (ev.type === 'phaseChange') {
+        this._showBanner(ev.to === PHASE.DESCENT ? 'DESCENT' : 'CONQUEST');
+      }
+      if (ev.type === 'spawnMoon') {
+        this._spawnMoon(ev.moon);
+      }
+      if (ev.type === 'spawnBoss') {
+        this._spawnBoss();
       }
     }
 
-    // Ship movement and firing.
-    this.ship.update(delta, this.projectiles, this.audio, forces);
+    // ── Backdrop: draw growing planet ─────────────────────────────────────────
+    this._drawBackdrop();
 
-    // Asteroid spawning via difficulty curve.
-    this._asteroidTimer -= delta;
-    if (this._asteroidTimer <= 0) {
-      this._asteroidTimer = DifficultyCurve.getSpawnInterval(this.planetData.index, this.elapsed);
-      this._spawnAsteroid();
+    // ── Hazard ────────────────────────────────────────────────────────────────
+    const hazardOut = this.hazard.update(delta, this.phases.hazardIntensity);
+    if (this.ship) {
+      this.ship.hazardForceX    = hazardOut.x    || 0;
+      this.ship.hazardForceY    = hazardOut.y    || 0;
+      this.ship.hazardSpeedMult = hazardOut.speedMult ?? 1;
     }
 
-    // Extra cluster spawning (Earth / Saturn).
-    if (this.hazard.shouldSpawnCluster && this.hazard.shouldSpawnCluster(delta)) {
-      for (let i = 0; i < 4; i++) this._spawnAsteroid(true);
-    }
-    if (this.hazard.shouldSpawnRingAsteroid && this.hazard.shouldSpawnRingAsteroid(delta)) {
-      const { width } = this.scale;
-      const bandY = this.hazard.getRingBandY();
-      const speed = DifficultyCurve.getAsteroidSpeed(this.planetData.index, this.elapsed) * 1.5;
-      this.asteroids.push(new Asteroid(this, width + 20, bandY + Phaser.Math.Between(-40, 40), ASTEROID_SIZE.SMALL, speed));
-    }
-
-    // Update entities.
-    this.asteroids.forEach(a => a.update(delta));
-    this.projectiles.forEach(p => p.update(delta, this._nearestEnemy(p.x, p.y)));
-    this.pickups.forEach(pk => pk.update(delta));
-
-    // Collisions.
-    this._checkProjectileAsteroidCollisions();
-    this._checkShipAsteroidCollisions();
-    this._checkShipPickupCollisions();
-
-    // Prune dead objects.
-    this.asteroids   = this.asteroids.filter(a  => a.alive);
-    this.projectiles = this.projectiles.filter(p => p.alive);
-    this.pickups     = this.pickups.filter(pk => pk.alive);
-
-    // Ship dead?
-    if (!this.ship.alive) { this._onDeath(); return; }
-
-    // Level complete — transition to boss.
-    if (this.elapsed >= BALANCE.LEVEL_DURATION) {
-      this._startBoss();
-    }
-  }
-
-  _spawnAsteroid(forceSmall = false) {
-    const { width, height } = this.scale;
-    const speed = DifficultyCurve.getAsteroidSpeed(this.planetData.index, this.elapsed);
-    const sizes  = forceSmall ? [ASTEROID_SIZE.SMALL] : [ASTEROID_SIZE.SMALL, ASTEROID_SIZE.SMALL, ASTEROID_SIZE.MEDIUM, ASTEROID_SIZE.LARGE];
-    const size   = sizes[Phaser.Math.Between(0, sizes.length - 1)];
-    const y      = Phaser.Math.Between(30, height - 30);
-    this.asteroids.push(new Asteroid(this, width + 30, y, size, speed));
-  }
-
-  // ── Boss phase ─────────────────────────────────────────────────────────────
-
-  _startBoss() {
-    this.gameState = STATE.BOSS;
-    // Clear remaining asteroids gracefully.
-    this.asteroids.forEach(a => a.destroy());
-    this.asteroids = [];
-    this._phaseTxt.setText('BOSS INCOMING!');
-    this.time.delayedCall(1800, () => this._phaseTxt.setText(''));
-    // Switch music.
-    this.audio.startMusic(true);
-    // Spawn the boss.
-    this.boss = new Boss(this, this.planetData);
-  }
-
-  _updateBoss(delta, dt) {
-    // Ship movement.
-    const rawForces = this.ship.alive
-      ? this.hazard.getForces(this.ship.x, this.ship.y)
-      : { x: 0, y: 0, speedMult: 1 };
-    const resist2 = this.ship.hazardResistance || 0;
-    const forces = {
-      x:         rawForces.x * (1 - resist2),
-      y:         rawForces.y * (1 - resist2),
-      speedMult: rawForces.speedMult,
-    };
-    this.hazard.update(delta);
-    this.ship.update(delta, this.projectiles, this.audio, forces);
-
-    // Boss update — passes a callback to spawn boss projectiles.
-    this.boss.update(delta, (projData) => {
-      this._bossProjectiles.push({
-        x: projData.x, y: projData.y,
-        vx: projData.vx, vy: projData.vy,
-        damage: projData.damage,
-        color: projData.color,
-        r: projData.r || 7,
-        alive: true,
-        g: this._makeBossProjG(projData),
-      });
-    }, this.audio, this.ship);
-
-    // Move boss projectiles.
-    this._bossProjectiles.forEach(p => {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.g.x = p.x;
-      p.g.y = p.y;
-      const { width, height } = this.scale;
-      if (p.x < -40 || p.x > width + 40 || p.y < -40 || p.y > height + 40) {
-        p.alive = false;
-        p.g.destroy();
+    // Hazard shield drain (Venus acid, Mercury heat, Sun passive)
+    if (hazardOut.shieldDrain && this.ship?.alive) {
+      this.ship.shield = Math.max(0, this.ship.shield - hazardOut.shieldDrain * (delta / 1000));
+      if (this.ship.shield <= 0 && this.ship.alive) {
+        this.ship.alive = false;
+        this.events.emit('shipDestroyed');
       }
-    });
-
-    // Update player projectiles.
-    this.projectiles.forEach(p => p.update(delta, this.boss.alive ? this.boss : null));
-
-    // Collisions.
-    this._checkProjectileBossCollisions();
-    this._checkBossProjShipCollisions();
-
-    // Prune.
-    this.projectiles      = this.projectiles.filter(p => p.alive);
-    this._bossProjectiles = this._bossProjectiles.filter(p => p.alive);
-
-    // Ship dead?
-    if (!this.ship.alive) { this._onDeath(); return; }
-
-    // Boss dead?
-    if (!this.boss.alive && this.gameState !== STATE.WIN) {
-      this._onBossDefeated();
     }
-  }
 
-  _makeBossProjG(data) {
-    const g = this.add.graphics().setDepth(8);
-    g.fillStyle(data.color, 0.35);
-    g.fillCircle(0, 0, (data.r || 7) + 4);
-    g.fillStyle(data.color, 0.92);
-    g.fillCircle(0, 0, data.r || 7);
-    g.x = data.x;
-    g.y = data.y;
-    return g;
-  }
+    // ── Ship update ───────────────────────────────────────────────────────────
+    let newShots = [];
+    if (this.ship?.alive) {
+      newShots = this.ship.update(delta);
+    }
 
-  // ── Target helper for homing missiles ─────────────────────────────────────
+    // ── Spawn new projectiles ─────────────────────────────────────────────────
+    for (const shot of newShots) {
+      this.projectiles.push(new Projectile(this, shot));
+    }
 
-  _nearestEnemy(x, y) {
-    // During boss phase, home to the boss.
-    if (this.gameState === STATE.BOSS && this.boss && this.boss.alive) return this.boss;
-    // During asteroid phase, find the nearest asteroid.
-    let best = null, bestDist = Infinity;
-    this.asteroids.forEach(a => {
-      const dx = a.x - x, dy = a.y - y;
-      const d  = dx * dx + dy * dy;
-      if (d < bestDist) { bestDist = d; best = a; }
-    });
-    return best;
-  }
+    // ── Asteroid spawning (Approach + Descent only) ───────────────────────────
+    if (!this.phases.isConquest) {
+      this._asteroidTimer -= delta;
+      if (this._asteroidTimer <= 0) {
+        this._spawnAsteroid();
+        const baseInterval = this.difficulty.spawnInterval(
+          this.phases.journeyProgress * (BALANCE.PHASE_APPROACH_MS + BALANCE.PHASE_DESCENT_MS)
+        );
+        this._asteroidTimer = baseInterval * this.phases.spawnIntervalMult;
+      }
+    }
 
-  // ── Collision helpers ──────────────────────────────────────────────────────
+    // ── Update entities ───────────────────────────────────────────────────────
+    for (let i = this.asteroids.length - 1; i >= 0; i--) {
+      const a = this.asteroids[i];
+      a.update(delta);
+      if (!a.active) { this.asteroids.splice(i, 1); continue; }
 
-  _checkProjectileAsteroidCollisions() {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      if (!p.alive) continue;
-      const pb = p.getBounds();
-      for (let j = this.asteroids.length - 1; j >= 0; j--) {
-        const a = this.asteroids[j];
-        if (!a.alive) continue;
-        const ab = a.getBounds();
-        if (_circles(pb, ab)) {
-          const dead = a.takeDamage(p.damage);
-          p.destroy();
-          if (dead) {
-            this.score += a.cfg.score;
-            this.spawnExplosion(a.x, a.y, a.cfg.radius, a.size === ASTEROID_SIZE.LARGE);
-            if (a.size === ASTEROID_SIZE.LARGE) this.audio.playExplosionLarge();
-            else this.audio.playExplosionSmall();
-            const children = a.explode((dropX, dropY) => this._maybeDropPickup(dropX, dropY));
-            children.forEach(c => this.asteroids.push(c));
+      // Ship collision
+      if (this.ship?.alive && a.overlapsPoint(this.ship.x, this.ship.y)) {
+        this.ship.takeDamage(BALANCE[`DAMAGE_${a.sizeLabel}_ASTEROID`]);
+        this._shakeCamera(6, 300);
+        this._explodeAsteroid(a);
+        this.asteroids.splice(i, 1);
+        continue;
+      }
+
+      // Projectile hits
+      for (let j = this.projectiles.length - 1; j >= 0; j--) {
+        const p = this.projectiles[j];
+        if (!p.active) continue;
+        if (a.overlapsPoint(p.x, p.y)) {
+          const died = a.hit(p.damage);
+          p.destroy(); this.projectiles.splice(j, 1);
+          if (died) {
+            this._onAsteroidDestroyed(a);
+            this.asteroids.splice(i, 1);
           }
           break;
         }
       }
     }
-  }
 
-  _checkShipAsteroidCollisions() {
-    if (!this.ship.alive) return;
-    const sb = { x: this.ship.x, y: this.ship.y, r: 16 };
-    for (let j = this.asteroids.length - 1; j >= 0; j--) {
-      const a = this.asteroids[j];
-      if (!a.alive) continue;
-      if (_circles(sb, a.getBounds())) {
-        if (this.ship.takeDamage(a.cfg.damage)) {
-          this.audio.playShieldHit();
-          this.audio.playExplosionSmall();
-          this._shake(4, 200);
-          this.spawnExplosion(a.x, a.y, a.cfg.radius, false);
-          a.explode(null);   // asteroid is consumed on collision
-          this.asteroids.splice(j, 1);
-        }
-        break;
+    // Moons
+    for (let i = this.moons.length - 1; i >= 0; i--) {
+      const m = this.moons[i];
+      m.update(delta);
+      if (!m.active) { this.moons.splice(i, 1); continue; }
+      if (this.ship?.alive && m.overlapsPoint(this.ship.x, this.ship.y)) {
+        this.ship.takeDamage(BALANCE.DAMAGE_MOON);
+        this._shakeCamera(10, 400);
       }
     }
-  }
 
-  _checkShipPickupCollisions() {
-    if (!this.ship.alive) return;
-    const sb = { x: this.ship.x, y: this.ship.y, r: 24 };
-    for (let k = this.pickups.length - 1; k >= 0; k--) {
-      const pk = this.pickups[k];
-      if (!pk.alive) continue;
-      if (_circles(sb, pk.getBounds())) {
-        this._collectPickup(pk);
-        pk.destroy();
-      }
-    }
-  }
-
-  _checkProjectileBossCollisions() {
-    if (!this.boss || !this.boss.alive) return;
-    const bb = this.boss.getBounds();
+    // Projectiles
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
-      if (!p.alive) continue;
-      if (_circles(p.getBounds(), bb)) {
-        p.destroy();
-        this.boss.takeDamage(p.damage);
-        this.spawnExplosion(p.x, p.y, 8, false);
+      p.update(delta);
+      if (!p.active) { this.projectiles.splice(i, 1); }
+    }
+
+    // Pickups
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pk = this.pickups[i];
+      pk.update(delta);
+      if (!pk.active) { this.pickups.splice(i, 1); continue; }
+      if (this.ship?.alive && pk.overlapsPoint(this.ship.x, this.ship.y)) {
+        this._collectPickup(pk);
+        this.pickups.splice(i, 1);
       }
     }
-  }
 
-  _checkBossProjShipCollisions() {
-    if (!this.ship.alive) return;
-    const sb = { x: this.ship.x, y: this.ship.y, r: 16 };
-    for (let i = this._bossProjectiles.length - 1; i >= 0; i--) {
-      const p = this._bossProjectiles[i];
-      if (!p.alive) continue;
-      if (_circles(sb, { x: p.x, y: p.y, r: p.r })) {
-        if (this.ship.takeDamage(p.damage)) {
-          this.audio.playShieldHit();
-          this._shake(5, 220);
+    // Boss
+    if (this.boss?.alive) {
+      this._bossProj = this._bossProj.filter(p => p.active !== false);
+      const bossOut = this.boss.update(delta, this.ship?.x, this.ship?.y, this._bossProj);
+      if (bossOut?.newProjectiles) this._bossProj.push(...bossOut.newProjectiles);
+
+      // Player projectiles vs boss
+      for (let j = this.projectiles.length - 1; j >= 0; j--) {
+        const p = this.projectiles[j];
+        if (!p.active) continue;
+        if (this.boss.overlapsPoint(p.x, p.y)) {
+          this.boss.hit(p.damage);
+          p.destroy(); this.projectiles.splice(j, 1);
+          this._shakeCamera(3, 150);
+          if (!this.boss.alive) { this._onBossDefeated(); }
+          break;
         }
-        p.alive = false;
-        p.g.destroy();
       }
+
+      // Boss projectiles vs ship
+      for (let k = this._bossProj.length - 1; k >= 0; k--) {
+        const bp = this._bossProj[k];
+        if (!bp.active) continue;
+        bp.update(delta);
+        if (this.ship?.alive && bp.overlapsPoint && bp.overlapsPoint(this.ship.x, this.ship.y)) {
+          this.ship.takeDamage(BALANCE.DAMAGE_BOSS_PROJECTILE);
+          bp.active = false;
+          this._shakeCamera(5, 200);
+        }
+      }
+    }
+
+    // ── Camera shake ──────────────────────────────────────────────────────────
+    if (this._shakeTimer > 0) {
+      this._shakeTimer -= delta;
+      const amt = this._shakeAmt * (this._shakeTimer / 300);
+      this.cameras.main.setScroll(
+        (Math.random() - 0.5) * amt * 2,
+        (Math.random() - 0.5) * amt * 2
+      );
+    } else {
+      this.cameras.main.setScroll(0, 0);
+    }
+
+    // ── HUD update ────────────────────────────────────────────────────────────
+    this._drawHUD();
+  }
+
+  // ── Backdrop (planet disc) ────────────────────────────────────────────────────
+
+  _drawBackdrop() {
+    this._backdropG.clear();
+    drawPlanet(
+      this._backdropG,
+      this.phases.planetCX, this.phases.planetCY,
+      this.phases.planetR,
+      this.planetData,
+      this.phases.planetRotation
+    );
+  }
+
+  // ── HUD drawing ───────────────────────────────────────────────────────────────
+
+  _drawHUD() {
+    const { width, height } = this.scale;
+
+    if (!this._hudG || !this._shieldBarG) return;
+
+    // Score / coins
+    if (this._scoreTxt) this._scoreTxt.setText(String(this.score));
+    if (this._coinTxt)  this._coinTxt.setText(String(this.coinsThisRun));
+
+    // Weapon chip
+    const hudW = this.ship?.weapons.getHudState();
+    if (hudW && this._wepChip) {
+      const ammoStr = `${String(hudW.ammo).padStart(2, '0')} ${hudW.weaponLabel}`;
+      this._wepChip.setText(ammoStr);
+      this._wepChipG.clear();
+      const cb = this._wepChip.getBounds();
+      this._wepChipG.lineStyle(2, C.BONE, 0.80);
+      this._wepChipG.strokeRect(cb.x - 6, cb.y - 4, cb.width + 12, cb.height + 8);
+    }
+
+    // Ammo / reload prompt
+    if (hudW && this._reloadTxt && this._ammoTxt) {
+      const showReload = hudW.showReloadPrompt;
+      this._reloadTxt.setVisible(showReload);
+      if (showReload) {
+        const blink = Math.floor(hudW.reloadPromptBlink / 350) % 2 === 0;
+        this._reloadTxt.setAlpha(blink ? 1 : 0.3);
+      }
+      this._ammoTxt.setVisible(!showReload);
+      if (!showReload) {
+        this._ammoTxt.setText(`MAG ${hudW.ammo}/${hudW.maxAmmo}${hudW.reloading ? ' — RELOADING' : ''}`);
+      }
+    }
+
+    // Top-right plate (always draw ink bg to knockout planet bleed)
+    this._hudG.clear();
+    drawPlate(this._hudG, width - 320, 18, 300, 80);
+
+    // Approach meter
+    drawApproachMeter(this._hudG, width - 300, 62, 220, 10, this.phases.journeyProgress);
+
+    // Distance
+    if (this._distTxt) {
+      this._distTxt.setText(`DIST ${this.phases.distanceKm} km`);
+    }
+
+    // Hull bar
+    if (this.ship) {
+      this._shieldBarG.clear();
+      drawPlate(this._shieldBarG, 22, height - 60, 330, 36);
+      drawHullBar(this._shieldBarG, 30, height - 48, 310, 16, this.ship.shieldFraction);
+      if (this._shieldTxt) {
+        this._shieldTxt.setText(`${Math.ceil(this.ship.shield)} / ${this.ship.maxShield}`);
+      }
+    }
+
+    // Boss HP bar
+    if (this.boss?.alive && this._bossHpG) {
+      const bx = width / 2 - 200, by = height - 44, bw = 400, bh = 16;
+      this._bossHpG.clear();
+      drawPlate(this._bossHpG, bx - 10, by - 14, bw + 20, 38);
+      // Boss bar outline
+      this._bossHpG.lineStyle(2, C.BONE, 1);
+      this._bossHpG.strokeRect(bx, by, bw, bh);
+      // Blaze fill
+      const frac = this.boss.hp / this.boss.maxHp;
+      this._bossHpG.fillStyle(C.BLAZE, 1);
+      this._bossHpG.fillRect(bx, by, bw * frac, bh);
+      if (this._bossHpLbl) {
+        this._bossHpLbl.setVisible(true).setPosition(width / 2, height - 58);
+        this._bossHpLbl.setText(this.boss.data?.theme?.toUpperCase() || 'BOSS');
+      }
+    } else if (this._bossHpG) {
+      this._bossHpG.clear();
+      if (this._bossHpLbl) this._bossHpLbl.setVisible(false);
     }
   }
 
-  // ── Pickups ────────────────────────────────────────────────────────────────
+  // ── Camera shake ──────────────────────────────────────────────────────────────
 
-  _maybeDropPickup(x, y) {
-    const r = Math.random();
-    if (r < BALANCE.GEM_DROP_CHANCE) {
-      this.pickups.push(new Pickup(this, x, y, PICKUP_TYPE.GEM));
-    } else if (r < BALANCE.COIN_DROP_CHANCE) {
-      this.pickups.push(new Pickup(this, x, y, PICKUP_TYPE.COIN));
-    } else if (r < BALANCE.COIN_DROP_CHANCE + BALANCE.POWERUP_DROP_CHANCE) {
-      // Pick a random power-up.
-      const types = [PICKUP_TYPE.SHIELD, PICKUP_TYPE.WEAPON_TOKEN];
-      this.pickups.push(new Pickup(this, x, y, types[Phaser.Math.Between(0, 1)]));
+  _shakeCamera(amount, duration) {
+    this._shakeAmt   = amount;
+    this._shakeTimer = Math.max(this._shakeTimer, duration);
+  }
+
+  // ── Spawning ──────────────────────────────────────────────────────────────────
+
+  _spawnAsteroid() {
+    const { height } = this.scale;
+    const _pool = [
+      ASTEROID_SIZE.LARGE, ASTEROID_SIZE.LARGE,
+      ASTEROID_SIZE.MEDIUM, ASTEROID_SIZE.MEDIUM, ASTEROID_SIZE.MEDIUM,
+      ASTEROID_SIZE.SMALL, ASTEROID_SIZE.SMALL, ASTEROID_SIZE.SMALL,
+    ];
+    const size = _pool[Phaser.Math.Between(0, _pool.length - 1)];
+    const a = new Asteroid(this, size, 1300, Phaser.Math.Between(30, height - 30));
+    a.speed = this.difficulty.asteroidSpeed(
+      this.phases.journeyProgress * (BALANCE.PHASE_APPROACH_MS + BALANCE.PHASE_DESCENT_MS)
+    );
+    this.asteroids.push(a);
+  }
+
+  _spawnMoon(moonDef) {
+    const { height } = this.scale;
+    const y = Phaser.Math.Between(80, height - 80);
+    this.moons.push(new Moon(this, moonDef, y));
+  }
+
+  _spawnBoss() {
+    const bossConfig = { ...this.planetData.boss, bossHp: this.planetData.boss.hp };
+    this.boss = new Boss(this, bossConfig, this.planetData);
+    this.audio.startMusic(true);   // switch to boss music variant
+  }
+
+  // ── Asteroid destroyed ────────────────────────────────────────────────────────
+
+  _onAsteroidDestroyed(a) {
+    this.score += BALANCE[`SCORE_${a.sizeLabel}_ASTEROID`];
+    this._spawnPickup(a.x, a.y);
+    // Large splits into mediums
+    if (a.sizeLabel === 'LARGE') {
+      for (let i = 0; i < BALANCE.ASTEROID_SPLIT_INTO; i++) {
+        const child = new Asteroid(this, ASTEROID_SIZE.MEDIUM, a.x, a.y);
+        child.speed = a.speed * 1.2;
+        child._vx = Math.cos((i / BALANCE.ASTEROID_SPLIT_INTO) * Math.PI * 2) * child.speed;
+        child._vy = Math.sin((i / BALANCE.ASTEROID_SPLIT_INTO) * Math.PI * 2) * child.speed * 0.4;
+        this.asteroids.push(child);
+      }
     }
+    a.destroy();
+    this._shakeCamera(2, 100);
+  }
+
+  _spawnPickup(x, y) {
+    const r = Math.random();
+    let type = null;
+    if (r < BALANCE.GEM_DROP_CHANCE)                                    type = PICKUP_TYPE.GEM;
+    else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE)   type = PICKUP_TYPE.COIN;
+    else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE + BALANCE.AMMO_CRATE_DROP_CHANCE) type = PICKUP_TYPE.AMMO;
+    else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE + BALANCE.AMMO_CRATE_DROP_CHANCE + BALANCE.POWERUP_DROP_CHANCE) type = PICKUP_TYPE.SHIELD;
+    if (type) this.pickups.push(new Pickup(this, type, x, y));
   }
 
   _collectPickup(pk) {
@@ -713,154 +696,110 @@ export class GameScene extends Phaser.Scene {
       case PICKUP_TYPE.COIN:
         this.coinsThisRun += BALANCE.COIN_VALUE;
         this.score        += 5;
-        this.audio.playCoinPickup();
-        this._floatText(pk.x, pk.y, '+1', '#FFD93D');
         break;
       case PICKUP_TYPE.GEM:
         this.coinsThisRun += BALANCE.GEM_VALUE;
         this.score        += 15;
-        this.audio.playGemPickup();
-        this._floatText(pk.x, pk.y, `+${BALANCE.GEM_VALUE}`, '#FF9F43');
         break;
       case PICKUP_TYPE.SHIELD:
-        this.ship.addShield(BALANCE.SHIELD_BOOST_AMOUNT);
-        this.audio.playPowerUpPickup();
-        this._floatText(pk.x, pk.y, `SHIELD +${BALANCE.SHIELD_BOOST_AMOUNT}`, '#00E5A0');
+        this.ship?.healShield(BALANCE.SHIELD_BOOST_AMOUNT);
         break;
-      case PICKUP_TYPE.WEAPON_TOKEN:
-        this.ship.activateWeaponToken();
-        this.audio.playPowerUpPickup();
-        this._floatText(pk.x, pk.y, 'POWER UP!', '#FF6B35');
+      case PICKUP_TYPE.AMMO:
+        this.ship?.weapons.refillCurrentMag();
+        break;
+      case PICKUP_TYPE.RAPID_FIRE:
+        this.events.emit('pickupRapidFire');
         break;
     }
+    pk.destroy();
   }
 
-  // ── Outcomes ───────────────────────────────────────────────────────────────
+  _explodeAsteroid(a) {
+    a.destroy();
+  }
 
-  _onDeath() {
-    if (this._deadDone) return;
-    this._deadDone  = true;
-    this.gameState  = STATE.DEAD;
+  // ── Boss defeated ─────────────────────────────────────────────────────────────
 
-    this.audio.stopMusic();
-    this.audio.playLevelLose();
-    this._shake(10, 500);
-
-    // Bank coins even on death (kid-friendly).
-    SaveData.addCoins(this.coinsThisRun);
-    SaveData.maybeUpdateHighScore(this.score);
-
-    this.spawnExplosion(this.ship.x, this.ship.y, 40, true);
-
-    this.time.delayedCall(1800, () => {
-      this.audio.stopMusic();
-      this.scene.start('GameOverScene', {
-        planetId:    this.planetData.id,
-        score:       this.score,
-        coinsEarned: this.coinsThisRun,
-      });
-    });
+  _onConquestComplete() {
+    this._onBossDefeated();
   }
 
   _onBossDefeated() {
-    if (this._winDone) return;
-    this._winDone  = true;
-    this.gameState = STATE.WIN;
-
-    this.audio.stopMusic();
-    this.audio.playLevelWin();
-
-    // Big explosion on boss position.
-    if (this.boss) this.spawnExplosion(this.boss.x, this.boss.y, 80, true);
-
-    // Score: base + survival bonus.
-    const shieldFrac   = this.ship.shield / this.ship.maxShield;
-    const survivalBonus = Math.round(shieldFrac * BALANCE.SCORE_BOSS_SURVIVAL_BONUS);
+    if (this.gameState === STATE.WIN) return;   // guard against double-trigger (direct call + event)
+    const survivalBonus = Math.floor((this.ship?.shieldFraction || 0) * BALANCE.SCORE_BOSS_SURVIVAL_BONUS);
     this.score += BALANCE.SCORE_BOSS + survivalBonus;
 
-    // Persist.
     SaveData.addCoins(this.coinsThisRun);
-    SaveData.maybeUpdateHighScore(this.score);
-    const next = getNextPlanet(this.planetData.id);
-    if (next) SaveData.unlockPlanet(next.id);
+    SaveData.maybeUpdateHighScore(this.planetData.id, this.score);
+    const nextId = SaveData.unlockNext(this.planetData.id);
 
-    this.time.delayedCall(2200, () => {
-      this.scene.start('VictoryScene', {
-        planetId:    this.planetData.id,
-        score:       this.score,
-        coinsEarned: this.coinsThisRun,
-        nextPlanetId: next ? next.id : null,
-      });
-    });
+    // Campaign complete?
+    if (this.planetData.id === 'sun') {
+      SaveData.setCampaignComplete();
+    }
+
+    this._shakeCamera(18, 800);
+    this.gameState = STATE.WIN;
+    this._winData = { score: this.score, coins: this.coinsThisRun, nextId };
   }
 
-  // ── Particles ──────────────────────────────────────────────────────────────
+  // ── Ship destroyed ────────────────────────────────────────────────────────────
 
-  /**
-   * Spawn a burst of explosion particles.
-   * @param {number}  x
-   * @param {number}  y
-   * @param {number}  radius   controls burst spread
-   * @param {boolean} big      large = more particles and longer life
-   */
-  spawnExplosion(x, y, radius, big) {
-    const count    = big ? 30 : 12;
-    const baseLife = big ? 0.9 : 0.5;
-    const colors   = [0xFF6B35, 0xFFD93D, 0xFF2EC4, 0xFFFFFF];
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Phaser.Math.FloatBetween(30, radius * 3.5);
-      this._particles.push({
-        x, y,
-        vx:     Math.cos(angle) * speed,
-        vy:     Math.sin(angle) * speed,
-        age:    0,
-        maxAge: baseLife * Phaser.Math.FloatBetween(0.5, 1.4),
-        color:  colors[Phaser.Math.Between(0, colors.length - 1)],
-        size:   Phaser.Math.FloatBetween(2, big ? 8 : 4),
+  _onShipDestroyed() {
+    SaveData.addCoins(this.coinsThisRun);
+    this._shakeCamera(20, 1000);
+    this.gameState = STATE.DEAD;
+  }
+
+  // ── End sequences ─────────────────────────────────────────────────────────────
+
+  _runEndSequence(delta) {
+    if (this.gameState === STATE.WIN && !this._winDone) {
+      this._winDone = true;
+      this.time.delayedCall(1800, () => {
+        if (SaveData.isCampaignComplete() && this.planetData.id === 'sun') {
+          this.scene.start('CampaignCompleteScene');
+        } else {
+          this.scene.start('LevelWinScene', this._winData);
+        }
+      });
+    }
+    if (this.gameState === STATE.DEAD && !this._deadDone) {
+      this._deadDone = true;
+      this.time.delayedCall(1200, () => {
+        this.scene.start('LevelLoseScene', { planetId: this.planetData.id });
       });
     }
   }
 
-  _updateParticles(dt) {
-    this._particleG.clear();
-    this._particles = this._particles.filter(p => {
-      p.age += dt;
-      if (p.age >= p.maxAge) return false;
-      const t = 1 - p.age / p.maxAge;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vx *= 0.97;
-      p.vy *= 0.97;
-      this._particleG.fillStyle(p.color, t * 0.9);
-      this._particleG.fillCircle(p.x, p.y, p.size * t);
-      return true;
-    });
+  // ── Shutdown ──────────────────────────────────────────────────────────────────
+
+  _shutdown() {
+    if (this.audio) this.audio.stopMusic();
+
+    if (this.input?.keyboard) {
+      this.input.keyboard.off('keydown-ESC', this._onPause);
+      this.input.keyboard.off('keydown-P',   this._onPause);
+    }
+
+    this.events.off('shipDestroyed',    this._onShipDestroyed,    this);
+    this.events.off('conquestComplete', this._onConquestComplete, this);
+
+    this.ship?.destroy();
+    this.boss?.destroy();
+    this.hazard?.destroy();
+
+    this.asteroids.forEach(a  => a.destroy());
+    this.projectiles.forEach(p => p.destroy());
+    this.pickups.forEach(pk   => pk.destroy());
+    this.moons.forEach(m      => m.destroy());
+
+    this.asteroids  = [];
+    this.projectiles = [];
+    this.pickups    = [];
+    this.moons      = [];
+    this._bossProj  = [];
+
+    this.cameras?.main?.setScroll(0, 0);
   }
-
-  // ── Floating text popups ───────────────────────────────────────────────────
-
-  _floatText(x, y, str, color = '#FFFFFF') {
-    const t = this.add.text(x, y, str, {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '16px', color,
-    }).setOrigin(0.5).setDepth(25);
-    this.tweens.add({
-      targets: t, y: y - 50, alpha: 0, duration: 1100, ease: 'Cubic.Out',
-      onComplete: () => t.destroy(),
-    });
-  }
-
-  // ── Screen shake ────────────────────────────────────────────────────────────
-
-  _shake(amount, duration) {
-    this._shakeAmount = amount;
-    this._shakeTimer  = duration;
-  }
-}
-
-/** Circle–circle overlap test. */
-function _circles(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy) < (a.r + b.r);
 }

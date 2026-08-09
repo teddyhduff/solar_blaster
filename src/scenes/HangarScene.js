@@ -1,269 +1,413 @@
-// HangarScene.js — The upgrade shop.
-// Layout: skin picker at top (buy / select / active) → per-ship upgrade rows below.
-// Clicking any skin (owned or not) shows its 2 upgrade tracks.
-// Unowned skins show a "BUY SKIN" button; owned skins show their real upgrade tiers.
+// HangarScene.js — The Hangar: a physical interior space, not a flat menu.
+// Layout: gantry + rotating ship centre, tool panels for each upgrade track,
+//         mechanic-bot install animation on purchase, welding arm sparks overhead.
+// Stencil Riso: bone / blaze / teal only.
 
-import { SKINS }       from '../data/upgrades.js';
-import { SaveData }    from '../systems/SaveData.js';
-import { drawShipShape } from '../systems/ShipShapes.js';
+import { SaveData }         from '../systems/SaveData.js';
+import { UPGRADE_TRACKS, SKINS, getSkin } from '../data/upgrades.js';
+import { BALANCE }          from '../data/balance.js';
+import { C, drawShip, drawHalftone } from '../systems/StencilArt.js';
 
 export class HangarScene extends Phaser.Scene {
   constructor() { super({ key: 'HangarScene' }); }
 
   create() {
     const { width, height } = this.scale;
-    const cx = width / 2;
 
-    // ── Background ──────────────────────────────────────────────────────────
-    this.add.rectangle(0, 0, width, height, 0x05010F).setOrigin(0);
-    const gridG = this.add.graphics().setDepth(0);
-    gridG.lineStyle(1, 0x111A2A, 1);
-    for (let x = 0; x < width; x += 80)  gridG.lineBetween(x, 0, x, height);
-    for (let y = 0; y < height; y += 80) gridG.lineBetween(0, y, width, y);
+    // ── Physical interior background ─────────────────────────────────────────
+    this._buildInterior();
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    this.add.text(cx, 36, 'HANGAR', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '42px', color: '#FF2EC4',
-      stroke: '#330011', strokeThickness: 5,
-    }).setOrigin(0.5).setDepth(2);
+    // ── Gantry + ship on lift ─────────────────────────────────────────────────
+    this._shipAngle = 0;
+    this._shipG     = this.add.graphics().setDepth(10);
+    this._gantryG   = this.add.graphics().setDepth(8);
+    this._drawGantry();
 
-    // ── Coin display ─────────────────────────────────────────────────────────
-    this._coinTxt = this.add.text(width - 24, 24, '', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '22px', color: '#FFD93D',
-    }).setOrigin(1, 0).setDepth(2);
-    this._updateCoinDisplay();
+    // ── Mechanic bot ─────────────────────────────────────────────────────────
+    this._botX    = width * 0.5 + 120;
+    this._botY    = height * 0.58;
+    this._botG    = this.add.graphics().setDepth(11);
+    this._botIdle = true;
+    this._drawBot(false);
 
-    // ── State ────────────────────────────────────────────────────────────────
-    this._activeSkin  = SaveData.getSkin();
-    this._viewedSkin  = this._activeSkin;   // which skin the panel below shows
+    // ── Welding arm ──────────────────────────────────────────────────────────
+    this._weldG    = this.add.graphics().setDepth(9);
+    this._weldT    = 0;
+    this._sparkTimer = 4000;
 
-    // ── Skin picker ──────────────────────────────────────────────────────────
-    this._buildSkinPicker(88);
+    // ── Header ────────────────────────────────────────────────────────────────
+    this.add.text(30, 24, 'HANGAR', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '32px', color: '#efe9dd',
+    }).setDepth(20);
+    this.add.text(30, 60, `COINS: ${SaveData.getCoins()}`, {
+      fontFamily: "'Space Mono', monospace",
+      fontSize: '14px', color: 'rgba(239,233,221,0.65)',
+    }).setDepth(20).setName('coinTxt');
+    this._coinTxt = this.children.getByName('coinTxt');
 
-    // ── Divider ──────────────────────────────────────────────────────────────
-    const divY = 210;
-    const divG = this.add.graphics().setDepth(2);
-    divG.lineStyle(1, 0x334455, 0.8);
-    divG.lineBetween(30, divY, width - 30, divY);
+    // ── Upgrade console panels ────────────────────────────────────────────────
+    this._buildUpgradePanels();
 
-    // ── Upgrade panel header ─────────────────────────────────────────────────
-    this._panelHeaderTxt = this.add.text(cx, divY + 18, '', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '16px', color: '#557788',
-    }).setOrigin(0.5).setDepth(2);
+    // ── Skin marking row ──────────────────────────────────────────────────────
+    this._buildSkinRow();
 
-    // ── Upgrade rows container (rebuilt on skin change) ───────────────────────
-    this._upgradeContainer = [];
-    this._buildUpgradePanel(divY + 40);
+    // ── Back button ───────────────────────────────────────────────────────────
+    const back = this.add.text(width - 30, 24, 'BACK', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '20px', color: '#efe9dd', fontStyle: 'bold', letterSpacing: 5,
+    }).setOrigin(1, 0).setDepth(20).setInteractive({ useHandCursor: true });
+    back.on('pointerdown', () => this.scene.start('PlanetSelectScene'));
+    back.on('pointerover',  () => back.setColor('#ff4d17'));
+    back.on('pointerout',   () => back.setColor('#efe9dd'));
 
-    // ── Back button ──────────────────────────────────────────────────────────
-    const backY = height - 44;
-    const backTxt = this.add.text(cx, backY, '← PLANET SELECT', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '22px', color: '#00F5FF',
-    }).setOrigin(0.5).setDepth(3).setInteractive({ useHandCursor: true });
-
-    const backBg = this.add.graphics().setDepth(2);
-    backBg.lineStyle(2, 0x00F5FF, 0.5);
-    backBg.strokeRoundedRect(cx - 170, backY - 22, 340, 44, 8);
-
-    backTxt.on('pointerdown', () => {
-      if (window.gameAudio) window.gameAudio.playUIClick();
-      this.scene.start('PlanetSelectScene');
+    // Animate
+    this._animTimer = this.time.addEvent({
+      delay: 16, loop: true, callback: this._tick, callbackScope: this,
     });
   }
 
-  // ── Skin picker ────────────────────────────────────────────────────────────
+  // ── Interior background ───────────────────────────────────────────────────────
 
-  _buildSkinPicker(topY) {
+  _buildInterior() {
+    const { width, height } = this.scale;
+    const g = this.add.graphics().setDepth(0);
+
+    // Deep ink ground
+    g.fillStyle(C.INK_DEEP, 1);
+    g.fillRect(0, 0, width, height);
+
+    // Floor plate — bone stencil grid
+    g.lineStyle(1, C.BONE, 0.10);
+    for (let x = 0; x < width; x += 60) g.lineBetween(x, height * 0.55, x, height);
+    for (let y = height * 0.55; y < height; y += 40) g.lineBetween(0, y, width, y);
+
+    // Ceiling cable runs
+    g.lineStyle(2, C.BONE, 0.18);
+    g.lineBetween(0, 60, width, 60);
+    for (let x = 80; x < width; x += 120) {
+      g.lineBetween(x, 60, x, 80 + (x % 60));
+    }
+
+    // Tool racks (left and right walls)
+    g.lineStyle(2, C.BONE, 0.20);
+    g.strokeRect(10, 90, 60, height - 110);
+    g.strokeRect(width - 70, 90, 60, height - 110);
+    // Tool handles
+    for (let y = 110; y < height - 30; y += 40) {
+      g.fillStyle(C.BONE, 0.15);
+      g.fillRect(20, y, 40, 14);
+      g.fillRect(width - 60, y, 40, 14);
+    }
+
+    // Diagnostic panels on rear wall
+    g.lineStyle(1, C.BONE, 0.14);
+    for (let i = 0; i < 5; i++) {
+      const px = width * 0.12 + i * width * 0.16;
+      g.strokeRect(px, 80, width * 0.10, 55);
+      g.fillStyle(C.BLAZE, 0.07);
+      g.fillRect(px + 4, 84, width * 0.10 - 8, 47);
+    }
+
+    // Paper grain / halftone on floor
+    const grainG = this.add.graphics().setDepth(1);
+    grainG.fillStyle(C.BONE, 0.05);
+    for (let y = height * 0.55; y < height; y += 7) {
+      for (let x = 0; x < width; x += 7) {
+        grainG.fillCircle(x + 1, y + 1, 1);
+      }
+    }
+  }
+
+  // ── Gantry ───────────────────────────────────────────────────────────────────
+
+  _drawGantry() {
+    const { width, height } = this.scale;
+    const g = this._gantryG;
+    g.clear();
+    const cx = width * 0.50, cy = height * 0.48;
+
+    // Gantry arms
+    g.lineStyle(4, C.BONE, 0.35);
+    g.lineBetween(cx - 110, 60, cx - 110, cy - 50);
+    g.lineBetween(cx + 110, 60, cx + 110, cy - 50);
+    g.lineBetween(cx - 110, cy - 50, cx + 110, cy - 50);
+
+    // Lift platform (the ship rests on this)
+    g.lineStyle(3, C.BONE, 0.55);
+    g.lineBetween(cx - 80, cy + 40, cx + 80, cy + 40);
+    g.fillStyle(C.INK, 1);
+    g.fillRect(cx - 80, cy + 40, 160, 8);
+    g.lineStyle(2, C.BONE, 0.30);
+    g.strokeRect(cx - 80, cy + 40, 160, 8);
+  }
+
+  // ── Welding arm + sparks ──────────────────────────────────────────────────────
+
+  _updateWeldArm(delta) {
     const { width } = this.scale;
-    const cx = width / 2;
-    const count   = SKINS.length;
-    const slotW   = Math.min(120, (width - 40) / count);
-    const totalW  = count * slotW;
-    const startX  = cx - totalW / 2 + slotW / 2;
-    const previewY = topY + 52;
+    this._weldG.clear();
+    this._weldT += delta * 0.0008;
+    const armX = width * 0.50 + Math.sin(this._weldT) * 80;
+    const armY = 60 + Math.abs(Math.sin(this._weldT * 0.7)) * 30;
+
+    this._weldG.lineStyle(3, C.BONE, 0.25);
+    this._weldG.lineBetween(width * 0.50, 60, armX, armY + 35);
+
+    // Sparks
+    this._sparkTimer -= delta;
+    if (this._sparkTimer <= 0) {
+      this._sparkTimer = 3000 + Math.random() * 2000;
+      // Brief blaze sparkle burst
+      for (let i = 0; i < 8; i++) {
+        const sx = armX + Phaser.Math.Between(-10, 10);
+        const sy = armY + 35 + Phaser.Math.Between(-5, 5);
+        this._weldG.fillStyle(C.BLAZE, Math.random() * 0.9 + 0.1);
+        this._weldG.fillCircle(sx, sy, Math.random() * 3 + 1);
+      }
+    }
+  }
+
+  // ── Ship on lift ─────────────────────────────────────────────────────────────
+
+  _drawShipOnLift(delta) {
+    const { width, height } = this.scale;
+    const cx = width * 0.50, cy = height * 0.46;
+    this._shipAngle += 0.0005 * delta;
+    const bob = Math.sin(this._shipAngle * 1.2) * 5;
+    this._shipG.clear();
+    const marking = SaveData.getSkin();
+    drawShip(this._shipG, cx, cy + bob, 'gameplay', marking);
+  }
+
+  // ── Mechanic bot ─────────────────────────────────────────────────────────────
+
+  _drawBot(active) {
+    const g = this._botG;
+    g.clear();
+    const bx = this._botX, by = this._botY;
+
+    // Body: small bone rectangle
+    g.fillStyle(C.BONE, 0.90);
+    g.fillRect(bx - 12, by - 20, 24, 28);
+    g.lineStyle(2, C.INK, 0.60);
+    g.strokeRect(bx - 12, by - 20, 24, 28);
+
+    // Head
+    g.fillStyle(C.BONE, 0.90);
+    g.fillRect(bx - 9, by - 30, 18, 12);
+    g.lineStyle(1, C.INK, 0.50);
+    g.strokeRect(bx - 9, by - 30, 18, 12);
+
+    // Eye (blaze when active)
+    g.fillStyle(active ? C.BLAZE : C.TEAL, 1);
+    g.fillCircle(bx, by - 24, 3);
+
+    // Wheels
+    g.fillStyle(C.INK, 1);
+    g.fillCircle(bx - 8, by + 10, 4);
+    g.fillCircle(bx + 8, by + 10, 4);
+
+    // Arm (extended toward ship during install)
+    if (active) {
+      g.lineStyle(3, C.BLAZE, 0.80);
+      g.lineBetween(bx - 12, by - 6, bx - 50, by - 20);
+    }
+  }
+
+  // ── Install animation (called when upgrade is purchased) ──────────────────────
+
+  _triggerInstall() {
+    this._botIdle = false;
+    this._drawBot(true);
+    // Tween bot toward ship
+    this.tweens.add({
+      targets: this,
+      _botX: this.scale.width * 0.50 + 80,
+      duration: 600,
+      yoyo: true,
+      onComplete: () => {
+        this._botIdle = true;
+        this._botX = this.scale.width * 0.50 + 120;
+        this._drawBot(false);
+        this._refreshUpgradePanels();
+        if (this._coinTxt) this._coinTxt.setText(`COINS: ${SaveData.getCoins()}`);
+      },
+    });
+  }
+
+  // ── Upgrade console panels ────────────────────────────────────────────────────
+
+  _buildUpgradePanels() {
+    const { width, height } = this.scale;
+    this._panelGroup = this.add.group();
+    const panelW = 200, panelH = 115;
+    const startX = width * 0.05;
+    const panelY = height * 0.67;
+    const cols   = [0, 1, 2, 3];
+
+    UPGRADE_TRACKS.forEach((track, i) => {
+      const px = startX + i * (panelW + 14);
+      this._drawUpgradePanel(px, panelY, panelW, panelH, track);
+    });
+  }
+
+  _drawUpgradePanel(px, py, pw, ph, track) {
+    const tier     = SaveData.getUpgradeTier(track.id);
+    const maxTier  = track.maxTier;
+    const atMax    = tier >= maxTier;
+    const nextCost = atMax ? 0 : track.costs[tier];
+
+    // Panel outline (bone, 2px stencil stroke)
+    const g = this.add.graphics().setDepth(18);
+    g.lineStyle(2, C.BONE, 0.70);
+    g.strokeRect(px, py, pw, ph);
+
+    // Track label
+    this.add.text(px + 10, py + 10, track.label, {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: '#efe9dd', fontStyle: 'bold', letterSpacing: 4,
+    }).setDepth(19);
+
+    // Description
+    this.add.text(px + 10, py + 28, track.description, {
+      fontFamily: "'Space Mono', monospace",
+      fontSize: '9px', color: 'rgba(239,233,221,0.55)',
+      wordWrap: { width: pw - 20 },
+    }).setDepth(19);
+
+    // Tier pips
+    for (let t = 0; t < maxTier; t++) {
+      const pipG = this.add.graphics().setDepth(19);
+      const filled = t < tier;
+      pipG.fillStyle(filled ? C.BLAZE : C.INK, 1);
+      pipG.fillRect(px + 10 + t * 22, py + 68, 16, 8);
+      pipG.lineStyle(1, C.BONE, 0.60);
+      pipG.strokeRect(px + 10 + t * 22, py + 68, 16, 8);
+    }
+
+    // Buy button
+    if (!atMax) {
+      const canAfford = SaveData.getCoins() >= nextCost;
+      const btnG = this.add.graphics().setDepth(19);
+      btnG.lineStyle(2, canAfford ? C.BLAZE : C.BONE, 0.60);
+      btnG.strokeRect(px + 10, py + 84, pw - 20, 22);
+      if (canAfford) {
+        btnG.fillStyle(C.BLAZE, 0.10);
+        btnG.fillRect(px + 10, py + 84, pw - 20, 22);
+      }
+      const btnLabel = `${nextCost} COINS — TIER ${tier + 1}`;
+      const btnTxt = this.add.text(px + pw / 2, py + 95, btnLabel, {
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: '11px', color: canAfford ? '#ff4d17' : 'rgba(239,233,221,0.40)',
+        fontStyle: 'bold', letterSpacing: 3,
+      }).setOrigin(0.5).setDepth(20);
+
+      // Click zone
+      const zone = this.add.rectangle(px + pw / 2, py + 95, pw - 20, 22, 0, 0)
+        .setDepth(21).setInteractive({ useHandCursor: canAfford });
+      if (canAfford) {
+        zone.on('pointerdown', () => {
+          if (SaveData.spendCoins(nextCost)) {
+            SaveData.purchaseUpgrade(track.id);
+            this._triggerInstall();
+          }
+        });
+      }
+    } else {
+      this.add.text(px + pw / 2, py + 95, 'MAX TIER', {
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: '11px', color: '#0f7a6a',
+        fontStyle: 'bold', letterSpacing: 4,
+      }).setOrigin(0.5).setDepth(20);
+    }
+  }
+
+  _refreshUpgradePanels() {
+    // Destroy and rebuild all panels
+    this._panelGroup?.clear(true, true);
+    const { width, height } = this.scale;
+    const panelW = 200, panelH = 115;
+    const startX = width * 0.05;
+    const panelY = height * 0.67;
+    UPGRADE_TRACKS.forEach((track, i) => {
+      const px = startX + i * (panelW + 14);
+      this._drawUpgradePanel(px, panelY, panelW, panelH, track);
+    });
+  }
+
+  // ── Skin marking row ──────────────────────────────────────────────────────────
+
+  _buildSkinRow() {
+    const { width, height } = this.scale;
+    const currentSkin = SaveData.getSkin();
+
+    this.add.text(width * 0.73, height * 0.67, 'MARKINGS', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '11px', color: '#efe9dd', fontStyle: 'bold', letterSpacing: 4,
+    }).setDepth(19);
 
     SKINS.forEach((skin, i) => {
-      const sx      = startX + i * slotW;
-      const isOwned  = SaveData.isSkinOwned(skin.id);
-      const isActive = skin.id === this._activeSkin;
-      const isViewed = skin.id === this._viewedSkin;
-      const hexStr   = '#' + skin.color.toString(16).padStart(6, '0');
+      const sx = width * 0.73, sy = height * 0.73 + i * 34;
+      const owned   = skin.cost === 0 || this._skinOwned(skin.id);
+      const active  = skin.id === currentSkin;
+      const canBuy  = !owned && SaveData.getCoins() >= skin.cost;
 
-      // Selection highlight ring (behind the ship).
-      if (isViewed) {
-        const selG = this.add.graphics().setDepth(2);
-        selG.lineStyle(2, skin.color, 0.85);
-        selG.strokeRoundedRect(sx - slotW / 2 + 4, topY - 2, slotW - 8, 108, 6);
-        selG.fillStyle(skin.color, 0.06);
-        selG.fillRoundedRect(sx - slotW / 2 + 4, topY - 2, slotW - 8, 108, 6);
-      }
+      const g = this.add.graphics().setDepth(18);
+      g.lineStyle(2, active ? C.BLAZE : C.BONE, active ? 0.90 : 0.40);
+      g.strokeRect(sx, sy, 230, 28);
+      if (active) { g.fillStyle(C.BLAZE, 0.07); g.fillRect(sx, sy, 230, 28); }
 
-      // Ship preview.
-      const shipG = this.add.graphics().setDepth(3);
-      const previewColor = isOwned ? skin.color : 0x223344;
-      const previewAlpha = isOwned ? 0.85 : 0.30;
-      drawShipShape(shipG, sx, previewY, previewColor, previewAlpha, skin.shape);
+      this.add.text(sx + 10, sy + 14, skin.label, {
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: '12px', color: active ? '#ff4d17' : '#efe9dd',
+        fontStyle: 'bold', letterSpacing: 3,
+      }).setOrigin(0, 0.5).setDepth(19);
 
-      // Skin label.
-      this.add.text(sx, topY + 92, skin.label, {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '9px', color: isOwned ? hexStr : '#334455', align: 'center',
-      }).setOrigin(0.5).setDepth(3);
+      const badge = owned ? (active ? 'EQUIPPED' : 'OWN IT') : `${skin.cost}c`;
+      this.add.text(sx + 220, sy + 14, badge, {
+        fontFamily: "'Space Mono', monospace",
+        fontSize: '10px', color: owned ? '#0f7a6a' : 'rgba(239,233,221,0.50)',
+      }).setOrigin(1, 0.5).setDepth(19);
 
-      // Active badge.
-      if (isActive) {
-        this.add.text(sx, topY + 6, '▶ ACTIVE', {
-          fontFamily: "'Orbitron', 'Courier New', monospace",
-          fontSize: '8px', color: hexStr,
-        }).setOrigin(0.5).setDepth(3);
-      }
-
-      // Click zone — selects this skin as "viewed" (and equips if owned).
-      const zone = this.add.zone(sx, previewY, slotW - 8, 100)
-        .setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(4);
-
+      const zone = this.add.rectangle(sx + 115, sy + 14, 230, 28, 0, 0)
+        .setDepth(20).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => {
-        if (window.gameAudio) window.gameAudio.playUIClick();
-        if (!isOwned) {
-          // Try to buy.
-          if (!SaveData.spendCoins(skin.cost)) {
-            this._floatMsg(sx, topY + 50, 'Not enough coins!', '#FF2222');
-            return;
+        if (!owned && canBuy) {
+          if (SaveData.spendCoins(skin.cost)) {
+            this._ownedSkins = this._ownedSkins || new Set(['standard']);
+            this._ownedSkins.add(skin.id);
+            SaveData.setSkin(skin.id);
+            this._triggerInstall();
+            this.scene.restart();
           }
-          SaveData.buySkin(skin.id);
+        } else if (owned) {
           SaveData.setSkin(skin.id);
-        } else {
-          SaveData.setSkin(skin.id);
+          this._triggerInstall();
+          this.scene.restart();
         }
-        this.scene.restart();
       });
     });
   }
 
-  // ── Upgrade panel (rebuilt when viewed skin changes) ───────────────────────
-
-  _buildUpgradePanel(startY) {
-    const skin     = SKINS.find(s => s.id === this._viewedSkin);
-    const isOwned  = SaveData.isSkinOwned(this._viewedSkin);
-    const hexStr   = '#' + skin.color.toString(16).padStart(6, '0');
-
-    this._panelHeaderTxt.setText(
-      `UPGRADES  ·  ${skin.label.toUpperCase()}` + (isOwned ? '' : '  [not owned]')
-    );
-
-    if (!isOwned) {
-      // Show locked message and buy cost.
-      const { width } = this.scale;
-      const cx = width / 2;
-      this.add.text(cx, startY + 40, `Buy ${skin.label} for ${skin.cost} coins to unlock upgrades.`, {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '14px', color: '#334455', align: 'center',
-      }).setOrigin(0.5).setDepth(3);
-      return;
-    }
-
-    const shipUpgrades = SaveData.getShipUpgrades(this._viewedSkin);
-    skin.upgrades.forEach((track, i) => {
-      this._buildUpgradeRow(track, startY + i * 100, shipUpgrades[track.id] || 0, skin);
-    });
+  _skinOwned(id) {
+    if (id === 'standard') return true;
+    // We track owned skins via the upgrades schema skin key
+    return SaveData.getSkin() === id || (this._ownedSkins && this._ownedSkins.has(id));
   }
 
-  // ── Single upgrade track row ───────────────────────────────────────────────
+  // ── Animation tick ────────────────────────────────────────────────────────────
 
-  _buildUpgradeRow(track, y, currentTier, skin) {
-    const { width } = this.scale;
-    const cx = width / 2;
-    const hexStr = '#' + skin.color.toString(16).padStart(6, '0');
-    const maxTier = track.maxTier ?? track.costs?.length ?? 0;
-
-    // Row background.
-    const rowBg = this.add.graphics().setDepth(1);
-    rowBg.fillStyle(0x0A1020, 0.7);
-    rowBg.fillRoundedRect(30, y, width - 60, 85, 8);
-    rowBg.lineStyle(1.5, 0x223344, 0.8);
-    rowBg.strokeRoundedRect(30, y, width - 60, 85, 8);
-
-    // Track name.
-    this.add.text(60, y + 14, track.label, {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '18px', color: hexStr,
-    }).setDepth(3);
-
-    // Description + next-tier bonus.
-    const nextBonus = currentTier < maxTier
-      ? `  ›  ${track.bonusLabels[currentTier]}`
-      : '  ›  MAXED OUT';
-    this.add.text(60, y + 38, track.description + nextBonus, {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '12px', color: '#446677',
-    }).setDepth(3);
-
-    // Tier pip indicators.
-    for (let t = 0; t < maxTier; t++) {
-      const px     = cx + t * 32 - 32;
-      const filled = t < currentTier;
-      const pipG   = this.add.graphics().setDepth(3);
-      pipG.fillStyle(filled ? skin.color : 0x112233, 1);
-      pipG.fillCircle(px, y + 62, 10);
-      pipG.lineStyle(2, skin.color, filled ? 0.9 : 0.30);
-      pipG.strokeCircle(px, y + 62, 10);
-    }
-
-    // Buy / MAX button.
-    if (currentTier < maxTier) {
-      const cost  = track.costs[currentTier];
-      const btnX  = width - 130;
-      const btnBg = this.add.graphics().setDepth(3);
-      const drawBtn = (hover) => {
-        btnBg.clear();
-        btnBg.fillStyle(hover ? skin.color : 0x1A1200, hover ? 0.35 : 0.8);
-        btnBg.fillRoundedRect(btnX - 80, y + 44, 160, 36, 6);
-        btnBg.lineStyle(2, skin.color, 0.9);
-        btnBg.strokeRoundedRect(btnX - 80, y + 44, 160, 36, 6);
-      };
-      drawBtn(false);
-
-      const btnTxt = this.add.text(btnX, y + 62, `${cost} COINS`, {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '15px', color: hexStr,
-      }).setOrigin(0.5).setDepth(4).setInteractive({ useHandCursor: true });
-
-      btnTxt.on('pointerover',  () => drawBtn(true));
-      btnTxt.on('pointerout',   () => drawBtn(false));
-      btnTxt.on('pointerdown',  () => {
-        if (SaveData.getCoins() < cost) {
-          this._floatMsg(btnX, y + 40, 'Not enough coins!', '#FF2222');
-          return;
-        }
-        SaveData.spendCoins(cost);
-        SaveData.setShipUpgradeTier(this._viewedSkin, track.id, currentTier + 1);
-        if (window.gameAudio) window.gameAudio.playPowerUpPickup();
-        this._updateCoinDisplay();
-        this.scene.restart();
-      });
-    } else {
-      this.add.text(width - 90, y + 62, '✓ MAX', {
-        fontFamily: "'Orbitron', 'Courier New', monospace",
-        fontSize: '16px', color: '#00E5A0',
-      }).setOrigin(0.5).setDepth(4);
+  _tick() {
+    const delta = 16;
+    this._drawShipOnLift(delta);
+    this._updateWeldArm(delta);
+    if (!this._botIdle) {
+      this._drawBot(true);
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  _updateCoinDisplay() {
-    if (this._coinTxt) this._coinTxt.setText(`COINS: ${SaveData.getCoins()}`);
-  }
-
-  _floatMsg(x, y, msg, color) {
-    const t = this.add.text(x, y, msg, {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize: '14px', color,
-    }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 1200, onComplete: () => t.destroy() });
+  shutdown() {
+    if (this._animTimer) { this._animTimer.remove(); this._animTimer = null; }
   }
 }

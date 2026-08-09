@@ -1,170 +1,162 @@
-// TitleScene.js — The game's title screen.
-// Shows the brand, a PLAY button, and a mute toggle.
+// TitleScene.js — Title screen for Solar Blaster V2.
+// Stencil Riso: bone text, blaze planet, misprint offset, halftone.
+// Brand is hero-level signal; no dashboard crowding.
 
 import { AudioSystem } from '../systems/AudioSystem.js';
+import { C, drawPlanet } from '../systems/StencilArt.js';
+import { PLANETS } from '../data/planets.js';
 
 export class TitleScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'TitleScene' });
-  }
+  constructor() { super({ key: 'TitleScene' }); }
 
   create() {
     const { width, height } = this.scale;
     const cx = width / 2;
-    const cy = height / 2;
 
-    // ── Background: deep space with animated stars ──────────────────────────
-    this._bg = this.add.graphics();
-    this._bg.fillStyle(0x05010F, 1);
-    this._bg.fillRect(0, 0, width, height);
+    // ── Ink ground + grain ────────────────────────────────────────────────────
+    const bg = this.add.graphics().setDepth(0);
+    bg.fillStyle(C.INK, 1);
+    bg.fillRect(0, 0, width, height);
+    // Paper grain
+    bg.fillStyle(C.BONE, 0.07);
+    for (let y = 0; y < height; y += 7) {
+      for (let x = 0; x < width; x += 7) {
+        bg.fillCircle(x + 1, y + 1, 1);
+      }
+    }
 
-    // Slow scrolling starfield.
+    // ── Neptune silhouette (right side, partial) ──────────────────────────────
+    this._planetG = this.add.graphics().setDepth(2);
+    this._planetT = 0;
+
+    // ── Moving bone star points ───────────────────────────────────────────────
     this._stars = [];
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 60; i++) {
       this._stars.push({
-        x:    Phaser.Math.Between(0, width),
-        y:    Phaser.Math.Between(0, height),
-        size: Phaser.Math.FloatBetween(0.5, 2.5),
-        speed: Phaser.Math.FloatBetween(8, 35),
-        alpha: Phaser.Math.FloatBetween(0.3, 1),
+        x:     Phaser.Math.Between(0, width),
+        y:     Phaser.Math.Between(0, height),
+        size:  Phaser.Math.FloatBetween(0.8, 2),
+        speed: Phaser.Math.FloatBetween(6, 22),
+        alpha: Phaser.Math.FloatBetween(0.25, 0.80),
       });
     }
     this._starG = this.add.graphics().setDepth(1);
 
-    // ── Glowing planet silhouette ────────────────────────────────────────────
-    this._planetG = this.add.graphics().setDepth(2);
-    this._planetG.fillStyle(0x1A0033, 1);
-    this._planetG.fillCircle(cx + 380, cy + 160, 260);
-    this._planetG.fillStyle(0x7C4DFF, 0.18);
-    this._planetG.fillCircle(cx + 380, cy + 160, 300);
-    this._planetG.lineStyle(2, 0x7C4DFF, 0.45);
-    this._planetG.strokeCircle(cx + 380, cy + 160, 265);
-
-    // ── Title text ────────────────────────────────────────────────────────────
-    // Giant title with a glow shadow.
-    this.add.text(cx + 3, cy - 145 + 3, 'SOLAR', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '108px',
-      color:      '#002233',
-      stroke:     '#000000',
-      strokeThickness: 8,
+    // ── Brand: SOLAR BLASTER — Saira Stencil One, full-bleed hero ────────────
+    // Misprint underlay
+    this.add.text(cx + 6, height * 0.36 + 6, 'SOLAR', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '108px', color: '#ff4d17', alpha: 0.55,
+    }).setOrigin(0.5).setDepth(3);
+    this.add.text(cx + 6, height * 0.53 + 6, 'BLASTER', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '80px', color: '#ff4d17', alpha: 0.55,
     }).setOrigin(0.5).setDepth(3);
 
-    this.add.text(cx, cy - 148, 'SOLAR', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '108px',
-      color:      '#00F5FF',
-      stroke:     '#003344',
-      strokeThickness: 6,
+    // Main text — bone
+    this.add.text(cx, height * 0.36, 'SOLAR', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '108px', color: '#efe9dd',
+    }).setOrigin(0.5).setDepth(4);
+    this.add.text(cx, height * 0.53, 'BLASTER', {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '80px', color: '#efe9dd',
     }).setOrigin(0.5).setDepth(4);
 
-    this.add.text(cx + 3, cy - 38 + 3, 'BLASTER', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '80px',
-      color:      '#220033',
-      stroke:     '#000000',
-      strokeThickness: 8,
-    }).setOrigin(0.5).setDepth(3);
-
-    this.add.text(cx, cy - 40, 'BLASTER', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '80px',
-      color:      '#FF2EC4',
-      stroke:     '#330011',
-      strokeThickness: 5,
+    // Tagline
+    this.add.text(cx, height * 0.67, 'Conquer the solar system. Reach the Sun.', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '18px', color: 'rgba(239,233,221,0.60)',
+      letterSpacing: 3,
     }).setOrigin(0.5).setDepth(4);
 
-    // Tagline.
-    this.add.text(cx, cy + 45, 'Blast through the solar system', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '20px',
-      color:      '#88AABB',
-    }).setOrigin(0.5).setDepth(4);
+    // ── PLAY button — 2px bone stencil outline ────────────────────────────────
+    const btnG = this.add.graphics().setDepth(5);
+    const redrawBtn = (hover) => {
+      btnG.clear();
+      btnG.lineStyle(2, hover ? C.BLAZE : C.BONE, hover ? 1 : 0.80);
+      btnG.strokeRect(cx - 130, height * 0.76 - 22, 260, 44);
+      if (hover) { btnG.fillStyle(C.BLAZE, 0.08); btnG.fillRect(cx - 130, height * 0.76 - 22, 260, 44); }
+    };
+    redrawBtn(false);
 
-    // ── PLAY button ─────────────────────────────────────────────────────────
-    this._playBtn = this._makeButton(cx, cy + 118, 'PLAY', 0x00F5FF, () => {
+    const playTxt = this.add.text(cx, height * 0.76, 'PLAY', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '28px', color: '#efe9dd',
+      fontStyle: 'bold', letterSpacing: 8,
+    }).setOrigin(0.5).setDepth(6).setInteractive({ useHandCursor: true });
+    playTxt.on('pointerover',  () => { redrawBtn(true);  playTxt.setColor('#ff4d17'); });
+    playTxt.on('pointerout',   () => { redrawBtn(false); playTxt.setColor('#efe9dd'); });
+    playTxt.on('pointerdown',  () => {
+      if (window.gameAudio) window.gameAudio.playUIClick?.();
       this.scene.start('PlanetSelectScene');
     });
 
-    // ── Mute toggle ────────────────────────────────────────────────────────
-    this._muted = this.game.registry.get('muted') || false;
-    this._muteBtn = this.add.text(width - 28, 28, this._muted ? '🔇' : '🔊', {
-      fontSize: '26px',
+    // ── Mute ─────────────────────────────────────────────────────────────────
+    const muteBtn = this.add.text(width - 28, 28, '', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '14px', color: 'rgba(239,233,221,0.50)',
+      letterSpacing: 4, fontStyle: 'bold',
     }).setOrigin(1, 0).setDepth(10).setInteractive({ useHandCursor: true });
-    this._muteBtn.on('pointerdown', () => {
-      this._muted = !this._muted;
-      this.game.registry.set('muted', this._muted);
-      this._muteBtn.setText(this._muted ? '🔇' : '🔊');
+    const updateMute = () => {
+      const m = this.game.registry.get('muted');
+      muteBtn.setText(m ? 'SOUND: OFF' : 'SOUND: ON');
+    };
+    updateMute();
+    muteBtn.on('pointerdown', () => {
+      const m = !this.game.registry.get('muted');
+      this.game.registry.set('muted', m);
+      if (window.gameAudio) window.gameAudio.setMuted(m);
+      updateMute();
     });
 
-    // ── Version / credit ────────────────────────────────────────────────────
-    this.add.text(cx, height - 22, 'Use keyboard, mouse or touch · Collect coins · Beat all 8 planets', {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '13px',
-      color:      '#445566',
-    }).setOrigin(0.5).setDepth(4);
+    // Credit
+    this.add.text(cx, height - 18, 'Keyboard · Mouse · Touch  ·  9 destinations  ·  Conquer all to win', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '12px', color: 'rgba(239,233,221,0.35)',
+      letterSpacing: 3,
+    }).setOrigin(0.5, 1).setDepth(4);
 
-    // Animate the title floating up/down.
-    this._titleT = 0;
-
-    // Initialise AudioSystem on first interaction (browser requires user gesture).
+    // Resume audio on first interaction
     this._audioReady = false;
     this.input.on('pointerdown', () => this._resumeAudio());
     this.input.keyboard.on('keydown', () => this._resumeAudio());
+
+    this._titleT = 0;
   }
 
   _resumeAudio() {
     if (this._audioReady) return;
     this._audioReady = true;
-    if (!window.gameAudio) {
-      window.gameAudio = new AudioSystem(this);
-    }
+    if (!window.gameAudio) window.gameAudio = new AudioSystem(this);
     window.gameAudio.setMuted(this.game.registry.get('muted') || false);
     window.gameAudio.resume();
-  }
-
-  _makeButton(x, y, label, color, callback) {
-    const hexStr = '#' + color.toString(16).padStart(6, '0');
-    const bg = this.add.graphics().setDepth(5);
-    const drawBg = (hover) => {
-      bg.clear();
-      bg.fillStyle(hover ? color : 0x001122, hover ? 0.3 : 0.65);
-      bg.fillRoundedRect(x - 120, y - 28, 240, 56, 8);
-      bg.lineStyle(2, color, 0.9);
-      bg.strokeRoundedRect(x - 120, y - 28, 240, 56, 8);
-    };
-    drawBg(false);
-
-    const txt = this.add.text(x, y, label, {
-      fontFamily: "'Orbitron', 'Courier New', monospace",
-      fontSize:   '28px',
-      color:      hexStr,
-    }).setOrigin(0.5).setDepth(6);
-
-    // Make the text interactive.
-    txt.setInteractive({ useHandCursor: true });
-    txt.on('pointerover',  () => { drawBg(true);  this.tweens.add({ targets: txt, scaleX: 1.07, scaleY: 1.07, duration: 80 }); });
-    txt.on('pointerout',   () => { drawBg(false); this.tweens.add({ targets: txt, scaleX: 1,    scaleY: 1,    duration: 80 }); });
-    txt.on('pointerdown',  () => {
-      if (window.gameAudio) window.gameAudio.playUIClick();
-      callback();
-    });
-
-    return { bg, txt };
   }
 
   update(time, delta) {
     const { width } = this.scale;
     const dt = delta / 1000;
     this._titleT += dt;
+    this._planetT += dt;
 
-    // Scroll stars left.
+    // Scroll stars
     this._starG.clear();
-    this._stars.forEach(s => {
+    this._starG.fillStyle(C.BONE, 1);
+    for (const s of this._stars) {
       s.x -= s.speed * dt;
       if (s.x < 0) { s.x = width; s.y = Phaser.Math.Between(0, this.scale.height); }
-      this._starG.fillStyle(0xFFFFFF, s.alpha);
+      this._starG.fillStyle(C.BONE, s.alpha);
       this._starG.fillCircle(s.x, s.y, s.size);
-    });
+    }
+
+    // Slowly rotating Neptune partial disc at top-right
+    this._planetG.clear();
+    drawPlanet(
+      this._planetG,
+      width * 0.88, -60,
+      200,
+      PLANETS[0],   // Neptune
+      this._planetT * 0.15
+    );
   }
 }

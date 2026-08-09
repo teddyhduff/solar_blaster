@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 0 400 140" width="400" height="140" role="img" aria-label="Reflex 07 player ship, small LOD">
+  
+  <rect x="-26" y="59" width="38" height="10" rx="5" fill="#ff4d17"></rect>
+  <rect x="-26" y="73" width="38" height="10" rx="5" fill="#ff4d17"></rect>
+  <polygon points="338,70 250,52 120,44 40,48 10,58 10,82 40,92 120,96 250,88" fill="#ff4d17" opacity=".9" transform="translate(6,6)"></polygon>
+  <polygon points="220,56 90,6 40,10 62,34 150,60" fill="#efe9dd"></polygon>
+  <polygon points="220,84 90,134 40,130 62,106 150,80" fill="#efe9dd"></polygon>
+  <polygon points="338,70 250,52 120,44 40,48 10,58 10,82 40,92 120,96 250,88" fill="#efe9dd"></polygon>
+  <polygon points="196,52 120,45 74,49 96,58 180,60" fill="#16181c"></polygon>
+  <polygon points="250,77 110,84 44,82 44,88 112,90 250,83" fill="#ff4d17"></polygon>
+</svg>
