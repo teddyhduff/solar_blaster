@@ -60,11 +60,16 @@ export class Ship {
     this._trail = [];
 
     // ── Graphics ──────────────────────────────────────────────────────────────
-    this.trailG = scene.add.graphics().setDepth(8);
-    this.g      = scene.add.graphics().setDepth(10);
+    // bodyG: ship hull baked at origin; trailG/overlayG redraw lightly each frame
+    this.trailG   = scene.add.graphics().setDepth(8);
+    this.bodyG    = scene.add.graphics().setDepth(10);
+    this.g        = scene.add.graphics().setDepth(11); // reload / rapid-fire rings
+    this._flashing = false;
+    this._ringKey  = '';
 
     this._setupInput();
-    this._draw(false);
+    this._redrawBody(false);
+    this.bodyG.setPosition(this.x, this.y);
   }
 
   // ── Input setup ───────────────────────────────────────────────────────────────
@@ -257,52 +262,66 @@ export class Ship {
 
     // ── Draw ─────────────────────────────────────────────────────────────────
     const flashing = this._flashTimer > 0 && Math.floor(this._flashTimer / 80) % 2 === 0;
-    this._draw(flashing);
+    if (flashing !== this._flashing) {
+      this._flashing = flashing;
+      this._redrawBody(flashing);
+    }
+    this.bodyG.setPosition(this.x, this.y);
+    this._drawOverlays();
 
     return shots;
   }
 
   // ── Visual ────────────────────────────────────────────────────────────────────
 
-  _draw(flashing) {
-    this.trailG.clear();
-    this.g.clear();
+  _redrawBody(flashing) {
+    this.bodyG.clear();
+    if (!flashing) {
+      drawShip(this.bodyG, 0, 0, 'gameplay', this.marking);
+    } else {
+      this.bodyG.fillStyle(C.BONE, 1);
+      this.bodyG.fillPoints([
+        { x: 51, y: 0 },
+        { x: 12, y: -7 },
+        { x: -51, y: -9 },
+        { x: -51, y: 9 },
+        { x: 12, y: 7 },
+      ], true);
+    }
+  }
 
-    // Trail — blaze dashes fading out
+  _drawOverlays() {
+    this.trailG.clear();
     for (const p of this._trail) {
       const t = 1 - p.age / p.maxAge;
       this.trailG.fillStyle(C.BLAZE, t * 0.6);
       this.trailG.fillRect(p.x, p.y - 2, 6 + t * 4, 4);
     }
 
-    // Reload progress ring around ship nose
     const hud = this.weapons.getHudState();
-    if (hud.reloading && hud.reloadProgress > 0) {
+    const showReload = hud.reloading && hud.reloadProgress > 0;
+    const showRapid  = !!hud.rapidFireActive;
+    if (!showReload && !showRapid) {
+      if (this._ringKey !== 'off') {
+        this._ringKey = 'off';
+        this.g.clear();
+      }
+      return;
+    }
+    const ringKey = `${showReload ? hud.reloadProgress.toFixed(2) : 0}|${showRapid ? 1 : 0}|${this.x | 0}|${this.y | 0}`;
+    if (ringKey === this._ringKey) return;
+    this._ringKey = ringKey;
+
+    this.g.clear();
+    if (showReload) {
       this.g.lineStyle(3, C.TEAL, 0.8);
       this.g.beginPath();
       this.g.arc(this.x, this.y, 28, -Math.PI / 2, -Math.PI / 2 + hud.reloadProgress * Math.PI * 2);
       this.g.strokePath();
     }
-
-    // Rapid-fire ring
-    if (hud.rapidFireActive) {
+    if (showRapid) {
       this.g.lineStyle(2, C.BLAZE, 0.5);
       this.g.strokeCircle(this.x, this.y, 32);
-    }
-
-    // Ship body (flash white-bone on hit)
-    if (!flashing) {
-      drawShip(this.g, this.x, this.y, 'gameplay', this.marking);
-    } else {
-      // Flash: draw bone solid silhouette
-      this.g.fillStyle(C.BONE, 1);
-      this.g.fillPoints([
-        { x: this.x + 51, y: this.y },
-        { x: this.x + 12, y: this.y - 7 },
-        { x: this.x - 51, y: this.y - 9 },
-        { x: this.x - 51, y: this.y + 9 },
-        { x: this.x + 12, y: this.y + 7 },
-      ], true);
     }
   }
 
@@ -311,6 +330,7 @@ export class Ship {
   destroy() {
     this.shutdown();
     if (this.g)      { this.g.destroy();      this.g      = null; }
+    if (this.bodyG)  { this.bodyG.destroy();  this.bodyG  = null; }
     if (this.trailG) { this.trailG.destroy(); this.trailG = null; }
   }
 }

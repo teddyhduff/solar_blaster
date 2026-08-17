@@ -1,6 +1,7 @@
 // Projectile.js — A player-fired projectile (laser bolt, plasma pellet, missile).
 // Stencil Riso: blaze bars with misprint shadow. No neon glow halos.
 // Constructed from a shot descriptor object produced by WeaponSystem.tryFire().
+// Drawn once at origin; moved via setPosition.
 
 import { C } from '../systems/StencilArt.js';
 
@@ -24,6 +25,8 @@ export class Projectile {
 
     this.g = scene.add.graphics().setDepth(9);
     this._draw();
+    this.g.setPosition(this.x, this.y);
+    this.g.setRotation(shot.angle);
   }
 
   // ── Visual ────────────────────────────────────────────────────────────────────
@@ -32,22 +35,18 @@ export class Projectile {
     this.g.clear();
     const w = this.weapon;
 
-    // Misprint shadow (blaze, shifted down+right)
+    // Local-space draw along +X; rotation applied via setRotation
     this.g.fillStyle(C.BLAZE, 0.35);
-    this.g.fillRect(this.x - w.width/2 + 6, this.y - w.height/2 + 6, w.width, w.height);
+    this.g.fillRect(-w.width / 2 + 6, -w.height / 2 + 6, w.width, w.height);
 
-    // Blaze body
     this.g.fillStyle(C.BLAZE, 1);
-    this.g.fillRect(this.x - w.width/2, this.y - w.height/2, w.width, w.height);
+    this.g.fillRect(-w.width / 2, -w.height / 2, w.width, w.height);
 
-    // Missile extras: bone nose, ink body centre
     if (w.id === 'missiles') {
-      // Bone nose (right tip)
       this.g.fillStyle(C.BONE, 1);
-      this.g.fillRect(this.x + w.width/2 - 5, this.y - w.height/2, 5, w.height);
-      // Blaze exhaust (left side)
+      this.g.fillRect(w.width / 2 - 5, -w.height / 2, 5, w.height);
       this.g.fillStyle(C.BLAZE, 0.60);
-      this.g.fillCircle(this.x - w.width/2 + 2, this.y, w.height * 0.6);
+      this.g.fillCircle(-w.width / 2 + 2, 0, w.height * 0.6);
     }
   }
 
@@ -66,7 +65,6 @@ export class Projectile {
         const str = this.weapon.homingStrength || 0.04;
         this.vx += (tx / len) * str * this.weapon.projectileSpeed;
         this.vy += (ty / len) * str * this.weapon.projectileSpeed;
-        // Re-normalise speed
         const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
         const target = this.weapon.projectileSpeed;
         this.vx = (this.vx / spd) * target;
@@ -78,17 +76,13 @@ export class Projectile {
     this.y += this.vy * dt;
 
     const { width, height } = this.scene.scale;
-    if (this.x > width + 20 || this.x < -20 || this.y < -20 || this.y > height + 20) {
+    if (this.x < -40 || this.x > width + 40 || this.y < -40 || this.y > height + 40) {
       this.destroy();
       return;
     }
 
-    this._draw();
-  }
-
-  overlapsPoint(px, py) {
-    const hw = this.weapon.width / 2 + 4, hh = this.weapon.height / 2 + 4;
-    return Math.abs(px - this.x) < hw && Math.abs(py - this.y) < hh;
+    this.g.setPosition(this.x, this.y);
+    if (this.homing) this.g.setRotation(Math.atan2(this.vy, this.vx));
   }
 
   destroy() {

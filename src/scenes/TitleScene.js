@@ -3,8 +3,11 @@
 // Brand is hero-level signal; no dashboard crowding.
 
 import { AudioSystem } from '../systems/AudioSystem.js';
-import { C, drawPlanet } from '../systems/StencilArt.js';
+import { C, bakePlanetImage, bakeInkGrain } from '../systems/StencilArt.js';
 import { PLANETS } from '../data/planets.js';
+
+const TITLE_PLANET_TEX = 'titlePlanet';
+const TITLE_GRAIN_TEX  = 'titleGrain';
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super({ key: 'TitleScene' }); }
@@ -13,20 +16,16 @@ export class TitleScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const cx = width / 2;
 
-    // ── Ink ground + grain ────────────────────────────────────────────────────
-    const bg = this.add.graphics().setDepth(0);
-    bg.fillStyle(C.INK, 1);
-    bg.fillRect(0, 0, width, height);
-    // Paper grain
-    bg.fillStyle(C.BONE, 0.07);
-    for (let y = 0; y < height; y += 7) {
-      for (let x = 0; x < width; x += 7) {
-        bg.fillCircle(x + 1, y + 1, 1);
-      }
-    }
+    // ── Ink ground + grain (baked — live Graphics kill FPS) ───────────────────
+    bakeInkGrain(this, TITLE_GRAIN_TEX, width, height, {
+      grainAlpha: 0.07,
+      pitch: 7,
+      depth: 0,
+    });
 
-    // ── Neptune silhouette (right side, partial) ──────────────────────────────
-    this._planetG = this.add.graphics().setDepth(2);
+    // ── Neptune silhouette (baked once; spin via setRotation) ─────────────────
+    this._planetImg = bakePlanetImage(this, TITLE_PLANET_TEX, 200, PLANETS[0], 2);
+    this._planetImg.setPosition(width * 0.88, -60);
     this._planetT = 0;
 
     // ── Moving bone star points ───────────────────────────────────────────────
@@ -141,22 +140,14 @@ export class TitleScene extends Phaser.Scene {
 
     // Scroll stars
     this._starG.clear();
-    this._starG.fillStyle(C.BONE, 1);
     for (const s of this._stars) {
       s.x -= s.speed * dt;
       if (s.x < 0) { s.x = width; s.y = Phaser.Math.Between(0, this.scale.height); }
       this._starG.fillStyle(C.BONE, s.alpha);
-      this._starG.fillCircle(s.x, s.y, s.size);
+      this._starG.fillRect(s.x, s.y, s.size, s.size);
     }
 
-    // Slowly rotating Neptune partial disc at top-right
-    this._planetG.clear();
-    drawPlanet(
-      this._planetG,
-      width * 0.88, -60,
-      200,
-      PLANETS[0],   // Neptune
-      this._planetT * 0.15
-    );
+    // Spin baked Neptune (no per-frame rebuild)
+    if (this._planetImg) this._planetImg.setRotation(this._planetT * 0.15);
   }
 }

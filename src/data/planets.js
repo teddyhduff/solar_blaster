@@ -26,7 +26,7 @@ export const PLANETS = [
     name:         'Neptune',
     subtitle:     'THE OUTER GATE',
     index:        0,
-    gameSpeed:    5,               // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,               // from balance.js — edit GAME_SPEED there
     hazardId:     'windGusts',     // sudden lateral gusts + drifting Dark Spot vortex
     hazardDesc:   'Supersonic wind gusts shove the ship sideways.',
     moons: [
@@ -52,7 +52,7 @@ export const PLANETS = [
     name:         'Uranus',
     subtitle:     'THE TILTED WORLD',
     index:        1,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'tiltingField', // entire play-field direction rotates 90° periodically
     hazardDesc:   "The planet's 98° tilt warps the field — drift direction rotates.",
     moons: [
@@ -78,7 +78,7 @@ export const PLANETS = [
     name:         'Saturn',
     subtitle:     'THE RING RUN',
     index:        2,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'ringDebris',   // dense fast small asteroid bands + hexagonal bonus pocket
     hazardDesc:   'Ring debris demands precise weaving. Find the hexagonal pocket for coins.',
     moons: [
@@ -105,7 +105,7 @@ export const PLANETS = [
     name:         'Jupiter',
     subtitle:     'THE GIANT\'S EYE',
     index:        3,
-    gameSpeed:    5,               // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,               // from balance.js — edit GAME_SPEED there
     hazardId:     'gravityWells',  // gravity wells + radiation belt lanes
     hazardDesc:   'Gravity wells drag the ship. Radiation belt lanes drain shield.',
     moons: [
@@ -134,7 +134,7 @@ export const PLANETS = [
     name:         'Mars',
     subtitle:     'THE RUST PLAINS',
     index:        4,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'dustStorm',    // cuts visibility + pushes ship + floaty low-gravity
     hazardDesc:   'Dust storms blind and push you. Lower gravity makes the ship floatier.',
     moons: [
@@ -161,7 +161,7 @@ export const PLANETS = [
     name:         'Earth',
     subtitle:     'HOME TURF',
     index:        5,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'spaceJunk',    // angular metallic debris + lightning flashes + rocket launch
     hazardDesc:   'Space junk and lightning. A rocket crosses the field periodically.',
     moons: [
@@ -187,7 +187,7 @@ export const PLANETS = [
     name:         'Venus',
     subtitle:     'THE FURNACE',
     index:        6,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'acidCloud',    // acid cloud banks drain shield + heat-haze distortion
     hazardDesc:   'Acid clouds drain shield. Constant movement is survival.',
     moons: [],   // Venus has no moons — the level is designed around their absence
@@ -210,7 +210,7 @@ export const PLANETS = [
     name:         'Mercury',
     subtitle:     'THE ANVIL',
     index:        7,
-    gameSpeed:    5,                // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,                // from balance.js — edit GAME_SPEED there
     hazardId:     'heatColdZones', // alternating heat (shield drain) and cold (slow handling) sweeps
     hazardDesc:   'Alternating heat and cold zones. Read the field, time your movement.',
     moons: [],   // Mercury has no moons
@@ -233,7 +233,7 @@ export const PLANETS = [
     name:         'The Sun',
     subtitle:     'THE PRIZE',
     index:        8,
-    gameSpeed:    5,              // level tempo multiplier (1 = original pace)
+    gameSpeed:    BALANCE.GAME_SPEED,              // from balance.js — edit GAME_SPEED there
     hazardId:     'solar',        // constant passive heat drain + flare sweeps + plasma prominences
     hazardDesc:   'Constant heat drain. Flare sweeps and plasma arcs cross the field.',
     moons: [],   // no moons

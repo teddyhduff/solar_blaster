@@ -9,7 +9,7 @@ import { SaveData }          from '../systems/SaveData.js';
 import { DifficultyCurve }   from '../systems/DifficultyCurve.js';
 import { HazardSystem }      from '../systems/HazardSystem.js';
 import { AudioSystem }       from '../systems/AudioSystem.js';
-import { PhaseManager, PHASE } from '../systems/PhaseManager.js';
+import { PhaseManager, PHASE, PLANET_R_CONQUEST } from '../systems/PhaseManager.js';
 import { Ship }              from '../entities/Ship.js';
 import { Asteroid, ASTEROID_SIZE } from '../entities/Asteroid.js';
 import { Moon }              from '../entities/Moon.js';
@@ -17,9 +17,12 @@ import { Boss }              from '../entities/Boss.js';
 import { Pickup, PICKUP_TYPE } from '../entities/Pickup.js';
 import { Projectile }        from '../entities/Projectile.js';
 import {
-  C, drawPlanet, drawHullBar, drawApproachMeter, drawPlate,
+  C, bakePlanetImage, bakeInkGrain, drawHullBar, drawApproachMeter, drawPlate,
   drawPickupCoin, drawPickupGem, drawPickupShield, drawPickupAmmo, drawPickupRapidFire,
 } from '../systems/StencilArt.js';
+
+const BACKDROP_TEX = 'planetBackdrop';
+const GRAIN_TEX    = 'gameGrain';
 
 const STATE = { PLAYING: 'playing', WIN: 'win', DEAD: 'dead', PAUSED: 'paused' };
 
@@ -72,14 +75,18 @@ export class GameScene extends Phaser.Scene {
     this.audio.setMuted(this.game.registry.get('muted') || false);
     this.audio.resume();
 
-    // ── Planet backdrop graphics layer (behind everything) ───────────────────
-    this._backdropG = this.add.graphics().setDepth(1);
-
-    // ── Starfield (ink ground + paper grain) ─────────────────────────────────
-    this._buildStarfield();
-
     // ── Phase manager ─────────────────────────────────────────────────────────
     this.phases = new PhaseManager(this, this.planetData);
+
+    // ── Starfield (baked texture — live grain Graphics kill FPS) ─────────────
+    this._buildStarfield();
+
+    // ── Planet backdrop (baked once at conquest size; growth via setScale) ───
+    this._backdropImg = bakePlanetImage(
+      this, BACKDROP_TEX, PLANET_R_CONQUEST, this.planetData, 1
+    );
+    this._backdropImg.setPosition(this.phases.planetCX, this.phases.planetCY);
+    this._backdropImg.setScale(this.phases.planetR / PLANET_R_CONQUEST);
 
     // ── Hazard ────────────────────────────────────────────────────────────────
     this.hazard = new HazardSystem(this, this.planetData.hazardId, 0);
@@ -117,27 +124,12 @@ export class GameScene extends Phaser.Scene {
 
   _buildStarfield() {
     const { width, height } = this.scale;
-
-    const g = this.add.graphics().setDepth(0);
-
-    // Ink ground
-    g.fillStyle(C.INK, 1);
-    g.fillRect(0, 0, width, height);
-
-    // Bone paper grain dots (7px pitch, very faint)
-    g.fillStyle(C.BONE, 0.12);
-    for (let y = 0; y < height; y += 7) {
-      for (let x = 0; x < width; x += 7) {
-        g.fillCircle(x + 1, y + 1, 1);
-      }
-    }
-
-    // A few brighter star points
-    g.fillStyle(C.BONE, 0.55);
-    const rng = Phaser.Math.RND;
-    for (let i = 0; i < 40; i++) {
-      g.fillCircle(rng.integerInRange(0, width), rng.integerInRange(0, height), 1.2);
-    }
+    bakeInkGrain(this, GRAIN_TEX, width, height, {
+      grainAlpha: 0.12,
+      pitch: 7,
+      depth: 0,
+      starCount: 40,
+    });
   }
 
   // ── HUD ─────────────────────────────────────────────────────────────────────
@@ -487,9 +479,20 @@ export class GameScene extends Phaser.Scene {
 
     // Boss
     if (this.boss?.alive) {
-      this._bossProj = this._bossProj.filter(p => p.active !== false);
       const bossOut = this.boss.update(delta, this.ship?.x, this.ship?.y, this._bossProj);
-      if (bossOut?.newProjectiles) this._bossProj.push(...bossOut.newProjectiles);
+      if (bossOut?.newProjectiles) {
+        for (const bp of bossOut.newProjectiles) {
+          if (!bp._g) {
+            bp._g = this.add.graphics().setDepth(9);
+            bp._g.fillStyle(C.BLAZE, 0.45);
+            bp._g.fillCircle(4, 4, bp.radius);
+            bp._g.fillStyle(C.BLAZE, 1);
+            bp._g.fillCircle(0, 0, bp.radius);
+            bp._g.setPosition(bp.x, bp.y);
+          }
+          this._bossProj.push(bp);
+        }
+      }
 
       // Player projectiles vs boss
       for (let j = this.projectiles.length - 1; j >= 0; j--) {
@@ -507,7 +510,11 @@ export class GameScene extends Phaser.Scene {
       // Boss projectiles vs ship
       for (let k = this._bossProj.length - 1; k >= 0; k--) {
         const bp = this._bossProj[k];
-        if (!bp.active) continue;
+        if (!bp.active) {
+          try { bp._g?.destroy(); } catch {}
+          this._bossProj.splice(k, 1);
+          continue;
+        }
         bp.update(delta);
         if (this.ship?.alive && bp.overlapsPoint && bp.overlapsPoint(this.ship.x, this.ship.y)) {
           this.ship.takeDamage(BALANCE.DAMAGE_BOSS_PROJECTILE);
@@ -536,14 +543,10 @@ export class GameScene extends Phaser.Scene {
   // ── Backdrop (planet disc) ────────────────────────────────────────────────────
 
   _drawBackdrop() {
-    this._backdropG.clear();
-    drawPlanet(
-      this._backdropG,
-      this.phases.planetCX, this.phases.planetCY,
-      this.phases.planetR,
-      this.planetData,
-      this.phases.planetRotation
-    );
+    if (!this._backdropImg) return;
+    this._backdropImg.setPosition(this.phases.planetCX, this.phases.planetCY);
+    this._backdropImg.setRotation(this.phases.planetRotation);
+    this._backdropImg.setScale(this.phases.planetR / PLANET_R_CONQUEST);
   }
 
   // ── HUD drawing ───────────────────────────────────────────────────────────────
@@ -553,7 +556,7 @@ export class GameScene extends Phaser.Scene {
 
     if (!this._hudG || !this._shieldBarG) return;
 
-    // Score / coins
+    // Score / coins (text only — cheap)
     if (this._scoreTxt) this._scoreTxt.setText(String(this.score));
     if (this._coinTxt)  this._coinTxt.setText(String(this.coinsThisRun));
 
@@ -562,10 +565,14 @@ export class GameScene extends Phaser.Scene {
     if (hudW && this._wepChip) {
       const ammoStr = `${String(hudW.ammo).padStart(2, '0')} ${hudW.weaponLabel}`;
       this._wepChip.setText(ammoStr);
-      this._wepChipG.clear();
-      const cb = this._wepChip.getBounds();
-      this._wepChipG.lineStyle(2, C.BONE, 0.80);
-      this._wepChipG.strokeRect(cb.x - 6, cb.y - 4, cb.width + 12, cb.height + 8);
+      const wepKey = `${ammoStr}|${hudW.ammo}|${hudW.maxAmmo}`;
+      if (wepKey !== this._hudWepKey) {
+        this._hudWepKey = wepKey;
+        this._wepChipG.clear();
+        const cb = this._wepChip.getBounds();
+        this._wepChipG.lineStyle(2, C.BONE, 0.80);
+        this._wepChipG.strokeRect(cb.x - 6, cb.y - 4, cb.width + 12, cb.height + 8);
+      }
     }
 
     // Ammo / reload prompt
@@ -582,12 +589,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Top-right plate (always draw ink bg to knockout planet bleed)
-    this._hudG.clear();
-    drawPlate(this._hudG, width - 320, 18, 300, 80);
-
-    // Approach meter
-    drawApproachMeter(this._hudG, width - 300, 62, 220, 10, this.phases.journeyProgress);
+    // Top-right plate + approach meter (dirty on progress change)
+    const approach = this.phases.journeyProgress;
+    if (this._hudApproach == null || Math.abs(approach - this._hudApproach) > 0.002) {
+      this._hudApproach = approach;
+      this._hudG.clear();
+      drawPlate(this._hudG, width - 320, 18, 300, 80);
+      drawApproachMeter(this._hudG, width - 300, 62, 220, 10, approach);
+    }
 
     // Distance
     if (this._distTxt) {
@@ -596,31 +605,39 @@ export class GameScene extends Phaser.Scene {
 
     // Hull bar
     if (this.ship) {
-      this._shieldBarG.clear();
-      drawPlate(this._shieldBarG, 22, height - 60, 330, 36);
-      drawHullBar(this._shieldBarG, 30, height - 48, 310, 16, this.ship.shieldFraction);
-      if (this._shieldTxt) {
-        this._shieldTxt.setText(`${Math.ceil(this.ship.shield)} / ${this.ship.maxShield}`);
+      const frac = this.ship.shieldFraction;
+      const shieldKey = `${Math.ceil(this.ship.shield)}/${this.ship.maxShield}`;
+      if (this._hudShieldKey !== shieldKey) {
+        this._hudShieldKey = shieldKey;
+        this._shieldBarG.clear();
+        drawPlate(this._shieldBarG, 22, height - 60, 330, 36);
+        drawHullBar(this._shieldBarG, 30, height - 48, 310, 16, frac);
+        if (this._shieldTxt) {
+          this._shieldTxt.setText(`${Math.ceil(this.ship.shield)} / ${this.ship.maxShield}`);
+        }
       }
     }
 
     // Boss HP bar
     if (this.boss?.alive && this._bossHpG) {
-      const bx = width / 2 - 200, by = height - 44, bw = 400, bh = 16;
-      this._bossHpG.clear();
-      drawPlate(this._bossHpG, bx - 10, by - 14, bw + 20, 38);
-      // Boss bar outline
-      this._bossHpG.lineStyle(2, C.BONE, 1);
-      this._bossHpG.strokeRect(bx, by, bw, bh);
-      // Blaze fill
       const frac = this.boss.hp / this.boss.maxHp;
-      this._bossHpG.fillStyle(C.BLAZE, 1);
-      this._bossHpG.fillRect(bx, by, bw * frac, bh);
-      if (this._bossHpLbl) {
-        this._bossHpLbl.setVisible(true).setPosition(width / 2, height - 58);
-        this._bossHpLbl.setText(this.boss.data?.theme?.toUpperCase() || 'BOSS');
+      const bossKey = `${this.boss.hp}|${this.boss.maxHp}|${this.boss.data?.theme || ''}`;
+      if (this._hudBossKey !== bossKey) {
+        this._hudBossKey = bossKey;
+        const bx = width / 2 - 200, by = height - 44, bw = 400, bh = 16;
+        this._bossHpG.clear();
+        drawPlate(this._bossHpG, bx - 10, by - 14, bw + 20, 38);
+        this._bossHpG.lineStyle(2, C.BONE, 1);
+        this._bossHpG.strokeRect(bx, by, bw, bh);
+        this._bossHpG.fillStyle(C.BLAZE, 1);
+        this._bossHpG.fillRect(bx, by, bw * frac, bh);
+        if (this._bossHpLbl) {
+          this._bossHpLbl.setVisible(true).setPosition(width / 2, height - 58);
+          this._bossHpLbl.setText(this.boss.data?.theme?.toUpperCase() || 'BOSS');
+        }
       }
-    } else if (this._bossHpG) {
+    } else if (this._bossHpG && this._hudBossKey !== 'hidden') {
+      this._hudBossKey = 'hidden';
       this._bossHpG.clear();
       if (this._bossHpLbl) this._bossHpLbl.setVisible(false);
     }
@@ -798,7 +815,17 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = [];
     this.pickups    = [];
     this.moons      = [];
+    for (const bp of this._bossProj) {
+      try { bp._g?.destroy(); } catch {}
+    }
     this._bossProj  = [];
+
+    if (this._backdropImg) {
+      this._backdropImg.destroy();
+      this._backdropImg = null;
+    }
+    if (this.textures?.exists(BACKDROP_TEX)) this.textures.remove(BACKDROP_TEX);
+    if (this.textures?.exists(GRAIN_TEX)) this.textures.remove(GRAIN_TEX);
 
     this.cameras?.main?.setScroll(0, 0);
   }

@@ -4,15 +4,14 @@
 
 export const BALANCE = {
 
-  // ── Global Level Tempo (default / fallback) ─────────────────────────────────
-  // Per-planet pace is set via `gameSpeed` on each planet in planets.js. This
-  // value is only the fallback used when a planet omits its own gameSpeed.
+  // ── Global Level Tempo ──────────────────────────────────────────────────────
+  // Source of truth for level pace. Every planet uses BALANCE.GAME_SPEED.
   // It scales the "world": phase progression (time-to-boss, planet growth,
   // distance readout, hazard ramp, moon timing), asteroid travel speed, asteroid
   // spawn cadence, and moon drift. Ship control, damage, HP, and reload are
   // intentionally NOT scaled so the game stays fair and controllable.
   // 1 = original pace; 5 = five times faster.
-  GAME_SPEED:                  5,
+  GAME_SPEED:                  1,
 
   // ── Shield / Health ────────────────────────────────────────────────────────
   BASE_SHIELD:              100,    // starting max shield HP
@@ -27,7 +26,7 @@ export const BALANCE = {
   DAMAGE_MEDIUM_ASTEROID:    20,
   DAMAGE_LARGE_ASTEROID:     35,
   DAMAGE_MOON:               50,   // V2: moon collision is a big hit
-  DAMAGE_BOSS_PROJECTILE:    15,
+  DAMAGE_BOSS_PROJECTILE:    25,
 
   // ── Scoring ────────────────────────────────────────────────────────────────
   SCORE_SMALL_ASTEROID:      10,

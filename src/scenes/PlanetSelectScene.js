@@ -5,25 +5,21 @@
 
 import { PLANETS }    from '../data/planets.js';
 import { SaveData }   from '../systems/SaveData.js';
-import { C, drawPlanet } from '../systems/StencilArt.js';
+import { C, bakePlanetImage, bakeInkGrain } from '../systems/StencilArt.js';
 
+const SELECT_GRAIN_TEX = 'selectGrain';
 export class PlanetSelectScene extends Phaser.Scene {
   constructor() { super({ key: 'PlanetSelectScene' }); }
 
   create() {
     const { width, height } = this.scale;
 
-    // ── Background ────────────────────────────────────────────────────────────
-    const bg = this.add.graphics().setDepth(0);
-    bg.fillStyle(C.INK, 1);
-    bg.fillRect(0, 0, width, height);
-    // Grain
-    bg.fillStyle(C.BONE, 0.08);
-    for (let y = 0; y < height; y += 7) {
-      for (let x = 0; x < width; x += 7) {
-        bg.fillCircle(x + 1, y + 1, 1);
-      }
-    }
+    // ── Background (baked grain — live Graphics kill FPS) ─────────────────────
+    bakeInkGrain(this, SELECT_GRAIN_TEX, width, height, {
+      grainAlpha: 0.08,
+      pitch: 7,
+      depth: 0,
+    });
 
     // ── Header ────────────────────────────────────────────────────────────────
     this.add.text(width / 2, 24, 'SOLAR BLASTER', {
@@ -128,17 +124,18 @@ export class PlanetSelectScene extends Phaser.Scene {
     g.lineStyle(2, isUnlocked ? C.BONE : C.INK_DEEP, alpha);
     g.strokeRect(cx - W / 2, cy - H / 2, W, H);
 
-    // Mini planet disc (smaller blaze disc)
-    const planetG = this.add.graphics().setDepth(6);
+    // Mini planet disc (baked texture — avoid live halftone Graphics)
     const pr = isUnlocked ? 24 : 18;
     if (isUnlocked) {
-      drawPlanet(planetG, cx, cy - 12, pr, planet, 0);
+      const texKey = `selectPlanet_${planet.id}`;
+      const planetImg = bakePlanetImage(this, texKey, pr, planet, 6);
+      planetImg.setPosition(cx, cy - 12);
     } else {
+      const planetG = this.add.graphics().setDepth(6);
       planetG.fillStyle(C.INK_DEEP, 1);
       planetG.fillCircle(cx, cy - 12, pr);
       planetG.lineStyle(2, C.BONE, 0.20);
       planetG.strokeCircle(cx, cy - 12, pr);
-      // Lock mark
       planetG.fillStyle(C.BONE, 0.30);
       planetG.fillRect(cx - 5, cy - 18, 10, 14);
       planetG.fillCircle(cx, cy - 18, 5);

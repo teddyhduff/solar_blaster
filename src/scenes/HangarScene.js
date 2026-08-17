@@ -6,7 +6,7 @@
 import { SaveData }         from '../systems/SaveData.js';
 import { UPGRADE_TRACKS, SKINS, getSkin } from '../data/upgrades.js';
 import { BALANCE }          from '../data/balance.js';
-import { C, drawShip, drawHalftone } from '../systems/StencilArt.js';
+import { C, drawShip } from '../systems/StencilArt.js';
 
 export class HangarScene extends Phaser.Scene {
   constructor() { super({ key: 'HangarScene' }); }
@@ -18,10 +18,12 @@ export class HangarScene extends Phaser.Scene {
     this._buildInterior();
 
     // ── Gantry + ship on lift ─────────────────────────────────────────────────
-    this._shipAngle = 0;
-    this._shipG     = this.add.graphics().setDepth(10);
-    this._gantryG   = this.add.graphics().setDepth(8);
+    this._shipAngle   = 0;
+    this._shipMarking = null;
+    this._shipG       = this.add.graphics().setDepth(10);
+    this._gantryG     = this.add.graphics().setDepth(8);
     this._drawGantry();
+    this._drawShipOnLift(0);
 
     // ── Mechanic bot ─────────────────────────────────────────────────────────
     this._botX    = width * 0.5 + 120;
@@ -175,9 +177,13 @@ export class HangarScene extends Phaser.Scene {
     const cx = width * 0.50, cy = height * 0.46;
     this._shipAngle += 0.0005 * delta;
     const bob = Math.sin(this._shipAngle * 1.2) * 5;
-    this._shipG.clear();
     const marking = SaveData.getSkin();
-    drawShip(this._shipG, cx, cy + bob, 'gameplay', marking);
+    if (marking !== this._shipMarking) {
+      this._shipMarking = marking;
+      this._shipG.clear();
+      drawShip(this._shipG, 0, 0, 'gameplay', marking);
+    }
+    this._shipG.setPosition(cx, cy + bob);
   }
 
   // ── Mechanic bot ─────────────────────────────────────────────────────────────

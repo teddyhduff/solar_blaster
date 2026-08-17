@@ -17,9 +17,9 @@ export const PHASE = {
 };
 
 // Planet radius at each phase boundary (in game pixels, 1280×720 canvas).
-const PLANET_R_START    = 28;    // tiny disc on the horizon (Approach start)
-const PLANET_R_DESCENT  = 80;    // planet has grown by Descent start
-const PLANET_R_CONQUEST = 420;   // fills most of the right side by Conquest
+export const PLANET_R_START    = 28;    // tiny disc on the horizon (Approach start)
+export const PLANET_R_DESCENT  = 80;    // planet has grown by Descent start
+export const PLANET_R_CONQUEST = 420;   // fills most of the right side by Conquest
 const PLANET_CX         = 1200;  // planet centre X (off-right, partially visible at start)
 const PLANET_CY         = 360;   // planet centre Y (vertically centred)
 

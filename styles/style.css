@@ -51,6 +51,19 @@ canvas {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── FPS debug meter (top-left over canvas) ────────────────────────────────── */
+#fps-meter {
+  position:       absolute;
+  top:            8px;
+  left:           10px;
+  z-index:        20;
+  pointer-events: none;
+  font:           400 12px/1 var(--sb-mono);
+  color:          var(--sb-bone);
+  opacity:        0.55;
+  letter-spacing: 0.04em;
+}
+
 /* ── sb-screen: the ink+grain playfield ground ─────────────────────────────── */
 .sb-screen {
   background: var(--sb-ink);

@@ -26,12 +26,13 @@ const DOT_PITCH   = 9;   // halftone pitch in screen pixels
 /**
  * Draw a halftone dot-grid over a bounding rect on graphics g.
  * Uses ink dots at DOT_PITCH, simulating the multiply-blended screen.
+ * fillRect is far cheaper than fillCircle for thousands of dots.
  */
 export function drawHalftone(g, x, y, w, h, alpha = 0.5) {
   g.fillStyle(C.INK, alpha);
   for (let dy = 0; dy < h; dy += DOT_PITCH) {
     for (let dx = 0; dx < w; dx += DOT_PITCH) {
-      g.fillCircle(x + dx + 1.5, y + dy + 1.5, 1.5);
+      g.fillRect(x + dx, y + dy, 3, 3);
     }
   }
 }
@@ -41,13 +42,63 @@ export function drawHalftone(g, x, y, w, h, alpha = 0.5) {
  */
 export function drawHalftoneDisc(g, cx, cy, r, alpha = 0.5) {
   g.fillStyle(C.INK, alpha);
+  const r2 = r * r;
   for (let dy = -r; dy <= r; dy += DOT_PITCH) {
     for (let dx = -r; dx <= r; dx += DOT_PITCH) {
-      if (dx * dx + dy * dy <= r * r) {
-        g.fillCircle(cx + dx, cy + dy, 1.5);
+      if (dx * dx + dy * dy <= r2) {
+        g.fillRect(cx + dx - 1, cy + dy - 1, 3, 3);
       }
     }
   }
+}
+
+/**
+ * Bake a full-screen ink ground + paper grain into a texture Image.
+ * Live Graphics with ~18k dots get re-rasterized every frame and kill FPS.
+ */
+export function bakeInkGrain(scene, key, width, height, {
+  grainAlpha = 0.12,
+  pitch = 7,
+  depth = 0,
+  starCount = 0,
+} = {}) {
+  const g = scene.make.graphics({ add: false });
+  g.fillStyle(C.INK, 1);
+  g.fillRect(0, 0, width, height);
+  g.fillStyle(C.BONE, grainAlpha);
+  for (let y = 0; y < height; y += pitch) {
+    for (let x = 0; x < width; x += pitch) {
+      g.fillRect(x, y, 2, 2);
+    }
+  }
+  if (starCount > 0) {
+    g.fillStyle(C.BONE, 0.55);
+    for (let i = 0; i < starCount; i++) {
+      const sx = Math.floor(Math.random() * width);
+      const sy = Math.floor(Math.random() * height);
+      g.fillRect(sx, sy, 2, 2);
+    }
+  }
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  g.generateTexture(key, width, height);
+  g.destroy();
+  return scene.add.image(0, 0, key).setOrigin(0, 0).setDepth(depth);
+}
+
+/**
+ * Bake a planet disc into a texture and return a centred Image.
+ * Callers should destroy the image and remove the texture key when done.
+ * Spin via image.setRotation — bake with rotation=0.
+ */
+export function bakePlanetImage(scene, key, r, planet, depth = 1) {
+  const pad = 28; // misprint + stroke + atmosphere bleed
+  const size = Math.ceil(r * 2 + pad * 2);
+  const g = scene.make.graphics({ add: false });
+  drawPlanet(g, size / 2, size / 2, r, planet, 0);
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  g.generateTexture(key, size, size);
+  g.destroy();
+  return scene.add.image(0, 0, key).setDepth(depth);
 }
 
 /**

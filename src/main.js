@@ -43,3 +43,15 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+// FPS meter — throttled DOM update (~4×/sec)
+const fpsEl = document.getElementById('fps-meter');
+if (fpsEl) {
+  let fpsAcc = 0;
+  game.events.on('step', (_time, delta) => {
+    fpsAcc += delta;
+    if (fpsAcc < 250) return;
+    fpsAcc = 0;
+    fpsEl.textContent = `${Math.round(game.loop.actualFps)} FPS`;
+  });
+}
