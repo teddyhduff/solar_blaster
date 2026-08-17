@@ -1,24 +1,27 @@
 // SaveData.js — All localStorage reads and writes go through here.
-// V2 schema (Section 16). Legacy V1 keys are wiped on first boot.
+// V2 schema, namespaced under solarBlaster.v2.* so V1 saves stay intact.
 //
 // Default state: Neptune only unlocked, 0 coins, no high scores,
 // all upgrade tiers 0, default skin marking 'standard', campaignComplete false.
 
-// ── V1 legacy keys (wiped on migrate) ──────────────────────────────────────
-const V1_KEYS = [
-  'solarBlaster.highScore',
-  'solarBlaster.unlockedPlanets',
-  'solarBlaster.upgrades',
-];
-
-// ── V2 keys ─────────────────────────────────────────────────────────────────
-const KEYS = {
+// ── Legacy unprefixed keys (read once during migrate; never wiped for V1) ────
+const LEGACY = {
   COINS:             'solarBlaster.coins',
   UNLOCKED:          'solarBlaster.unlocked',
   HIGH_SCORES:       'solarBlaster.highScores',
   UPGRADES:          'solarBlaster.upgrades',
   CAMPAIGN_COMPLETE: 'solarBlaster.campaignComplete',
   SCHEMA_VERSION:    'solarBlaster.schemaVersion',
+};
+
+// ── V2 keys (isolated from V1) ───────────────────────────────────────────────
+const KEYS = {
+  COINS:             'solarBlaster.v2.coins',
+  UNLOCKED:          'solarBlaster.v2.unlocked',
+  HIGH_SCORES:       'solarBlaster.v2.highScores',
+  UPGRADES:          'solarBlaster.v2.upgrades',
+  CAMPAIGN_COMPLETE: 'solarBlaster.v2.campaignComplete',
+  SCHEMA_VERSION:    'solarBlaster.v2.schemaVersion',
 };
 
 const CURRENT_VERSION = 2;
@@ -38,20 +41,68 @@ const DEFAULT_UPGRADES = {
   skin:             'standard',   // marking/pattern id, not hull colour
 };
 
+function looksLikeV2Upgrades(raw) {
+  try {
+    const u = JSON.parse(raw);
+    return u && typeof u === 'object' && ('weaponPower' in u || u.skin === 'standard');
+  } catch {
+    return false;
+  }
+}
+
 // ── Migration ────────────────────────────────────────────────────────────────
 function migrate() {
   const version = parseInt(localStorage.getItem(KEYS.SCHEMA_VERSION) || '0', 10);
   if (version >= CURRENT_VERSION) return;
 
-  // Wipe V1 keys.
-  V1_KEYS.forEach(k => localStorage.removeItem(k));
+  // Prefer already-namespaced values; otherwise adopt legacy unprefixed V2 saves.
+  // Never delete V1 keys (highScore, unlockedPlanets, or V1-shaped upgrades).
+  const legacyVer = parseInt(localStorage.getItem(LEGACY.SCHEMA_VERSION) || '0', 10);
+  const legacyUpgrades = localStorage.getItem(LEGACY.UPGRADES);
+  const canAdoptLegacy =
+    legacyVer >= 2 ||
+    (legacyUpgrades && looksLikeV2Upgrades(legacyUpgrades)) ||
+    localStorage.getItem(LEGACY.UNLOCKED) !== null ||
+    localStorage.getItem(LEGACY.HIGH_SCORES) !== null;
 
-  // Write fresh V2 defaults.
-  localStorage.setItem(KEYS.COINS, '0');
-  localStorage.setItem(KEYS.UNLOCKED, JSON.stringify(['neptune']));
-  localStorage.setItem(KEYS.HIGH_SCORES, JSON.stringify({}));
-  localStorage.setItem(KEYS.UPGRADES, JSON.stringify(DEFAULT_UPGRADES));
-  localStorage.setItem(KEYS.CAMPAIGN_COMPLETE, 'false');
+  if (canAdoptLegacy) {
+    const coins = localStorage.getItem(LEGACY.COINS);
+    const unlocked = localStorage.getItem(LEGACY.UNLOCKED);
+    const scores = localStorage.getItem(LEGACY.HIGH_SCORES);
+    const upgrades = localStorage.getItem(LEGACY.UPGRADES);
+    const complete = localStorage.getItem(LEGACY.CAMPAIGN_COMPLETE);
+
+    localStorage.setItem(KEYS.COINS, coins ?? '0');
+    localStorage.setItem(KEYS.UNLOCKED, unlocked ?? JSON.stringify(['neptune']));
+    localStorage.setItem(KEYS.HIGH_SCORES, scores ?? '{}');
+    localStorage.setItem(
+      KEYS.UPGRADES,
+      upgrades && looksLikeV2Upgrades(upgrades)
+        ? upgrades
+        : JSON.stringify(DEFAULT_UPGRADES)
+    );
+    localStorage.setItem(KEYS.CAMPAIGN_COMPLETE, complete ?? 'false');
+
+    // Clear only unprefixed keys that belong to V2 shape — leave V1 keys alone.
+    // solarBlaster.coins / upgrades may still be needed by V1 until V1 migrates;
+    // only remove clearly V2-only unprefixed keys.
+    localStorage.removeItem(LEGACY.UNLOCKED);
+    localStorage.removeItem(LEGACY.HIGH_SCORES);
+    localStorage.removeItem(LEGACY.CAMPAIGN_COMPLETE);
+    localStorage.removeItem(LEGACY.SCHEMA_VERSION);
+    if (upgrades && looksLikeV2Upgrades(upgrades)) {
+      localStorage.removeItem(LEGACY.UPGRADES);
+      // Coins were shared; if we adopted V2 upgrades, move coins fully to v2.
+      localStorage.removeItem(LEGACY.COINS);
+    }
+  } else {
+    localStorage.setItem(KEYS.COINS, '0');
+    localStorage.setItem(KEYS.UNLOCKED, JSON.stringify(['neptune']));
+    localStorage.setItem(KEYS.HIGH_SCORES, JSON.stringify({}));
+    localStorage.setItem(KEYS.UPGRADES, JSON.stringify(DEFAULT_UPGRADES));
+    localStorage.setItem(KEYS.CAMPAIGN_COMPLETE, 'false');
+  }
+
   localStorage.setItem(KEYS.SCHEMA_VERSION, String(CURRENT_VERSION));
 }
 

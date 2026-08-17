@@ -109,7 +109,16 @@ export class TitleScene extends Phaser.Scene {
       updateMute();
     });
 
-    // Credit
+    // Credit + hub link
+    this.add.text(cx, height - 40, 'VERSIONS', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '13px', color: 'rgba(239,233,221,0.45)',
+      letterSpacing: 4, fontStyle: 'bold',
+    }).setOrigin(0.5, 1).setDepth(4).setInteractive({ useHandCursor: true })
+      .on('pointerover', function () { this.setColor('#ff4d17'); })
+      .on('pointerout',  function () { this.setColor('rgba(239,233,221,0.45)'); })
+      .on('pointerdown', () => { window.location.href = '../'; });
+
     this.add.text(cx, height - 18, 'Keyboard · Mouse · Touch  ·  9 destinations  ·  Conquer all to win', {
       fontFamily: "'Barlow Condensed', sans-serif",
       fontSize: '12px', color: 'rgba(239,233,221,0.35)',

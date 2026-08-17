@@ -11,7 +11,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    // Migrate V1 localStorage to V2 schema (wipes old keys on first run).
+    // Init V2 localStorage (namespaced; does not wipe V1).
     SaveData.init();
 
     if (!this.game.registry.has('muted')) {
