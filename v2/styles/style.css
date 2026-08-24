@@ -1,0 +1,171 @@
+/* style.css — Solar Blaster V2, Stencil Riso (scheme 1b)
+   Two inks on ink-black. Everything halftoned. Deliberate misprint offset.
+   Adapted from files/solar-blaster-design-handoff/handoff/solar-blaster.css */
+
+/* Stencil Riso fonts — self-host before shipping */
+@import url('https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Barlow+Condensed:wght@500;700&family=Space+Mono&display=swap');
+
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
+:root {
+  /* Inks — the only five allowed values */
+  --sb-ink:        #16181c;   /* ground, canopies, dot screen, HUD knockout plates */
+  --sb-ink-deep:   #101216;   /* chrome / panels behind the play area */
+  --sb-bone:       #efe9dd;   /* hulls, HUD strokes, numerals, asteroids */
+  --sb-blaze:      #ff4d17;   /* thrust, guns, damage, danger, planets — NOTHING ELSE */
+  --sb-teal:       #0f7a6a;   /* third ink, rare: shields / pickups only */
+
+  /* Geometry constants */
+  --sb-dot:        9px;       /* halftone screen pitch — constant in screen px */
+  --sb-misprint:   6px;       /* plate offset, always down + right */
+  --sb-rule:       2px;       /* stencil stroke weight */
+
+  /* Typography */
+  --sb-display: 'Saira Stencil One', 'Impact', sans-serif;   /* numerals, planet names */
+  --sb-label:   'Barlow Condensed', 'Oswald', sans-serif;    /* labels, 700, tracked .3em, UPPER */
+  --sb-mono:    'Space Mono', ui-monospace, monospace;        /* readouts, debug */
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin:     0;
+  padding:    0;
+}
+
+/* ── Base page ─────────────────────────────────────────────────────────────── */
+html, body {
+  width:            100%;
+  height:           100%;
+  background-color: var(--sb-ink);   /* ink ground, matches game canvas background */
+  overflow:         hidden;
+  touch-action:     none;            /* prevent browser scroll / zoom on touch */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select:      none;
+}
+
+/* ── Phaser canvas ─────────────────────────────────────────────────────────── */
+canvas {
+  display: block;
+  margin:  auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── FPS debug meter (top-left over canvas) ────────────────────────────────── */
+#fps-meter {
+  position:       absolute;
+  top:            8px;
+  left:           10px;
+  z-index:        20;
+  pointer-events: none;
+  font:           400 12px/1 var(--sb-mono);
+  color:          var(--sb-bone);
+  opacity:        0.55;
+  letter-spacing: 0.04em;
+}
+
+/* ── sb-screen: the ink+grain playfield ground ─────────────────────────────── */
+.sb-screen {
+  background: var(--sb-ink);
+  background-image: radial-gradient(circle, rgba(239,233,221,.14) 0 1.1px, transparent 1.2px);
+  background-size: 7px 7px;           /* paper grain / starfield */
+  color: var(--sb-bone);
+  font-family: var(--sb-label);
+}
+
+/* ── Halftone overlay (apply to any solid-filled element) ──────────────────── */
+.sb-halftone::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle, var(--sb-ink) 0 1.5px, transparent 1.6px);
+  background-size: var(--sb-dot) var(--sb-dot);
+  mix-blend-mode: multiply;
+}
+
+/* ── Planets: flat blaze disc, screened, bone keyline ──────────────────────── */
+.sb-planet { position: relative; border-radius: 50%; background: var(--sb-blaze); }
+.sb-planet::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle, var(--sb-ink) 0 1.4px, transparent 1.5px);
+  background-size: var(--sb-dot) var(--sb-dot); mix-blend-mode: multiply;
+}
+.sb-planet::after {
+  content: ''; position: absolute; inset: -12px; border-radius: 50%;
+  border: 3px solid var(--sb-bone); opacity: .5;
+}
+.sb-crater { position: absolute; border-radius: 50%; background: var(--sb-ink); opacity: .35; }
+
+/* ── Typography ────────────────────────────────────────────────────────────── */
+.sb-num   { font: 400 44px/.9 var(--sb-display); color: var(--sb-bone);
+            text-shadow: 3px 3px 0 rgba(255,77,23,.9); }   /* misprint */
+.sb-label { font: 700 11px/1 var(--sb-label); letter-spacing: .34em;
+            text-transform: uppercase; color: var(--sb-blaze); }
+.sb-label--quiet { color: rgba(239,233,221,.55); }
+.sb-title { font: 400 24px/1 var(--sb-display); letter-spacing: .06em; color: var(--sb-bone); }
+.sb-read  { font: 400 11px/1.6 var(--sb-mono); color: rgba(239,233,221,.55); }
+
+/* ── HUD primitives ────────────────────────────────────────────────────────── */
+.sb-chip  { display: inline-block; padding: 5px 12px 6px;
+            border: var(--sb-rule) solid var(--sb-bone);
+            font: 400 20px/1 var(--sb-display); color: var(--sb-bone); }
+
+.sb-bar   { position: relative; height: 16px; border: var(--sb-rule) solid var(--sb-bone); padding: 2px; }
+.sb-bar__fill { height: 100%;
+            background: repeating-linear-gradient(90deg, var(--sb-bone) 0 3px, transparent 3px 6px); }
+.sb-bar--solid .sb-bar__fill { background: var(--sb-bone); }
+
+.sb-meter { position: relative; width: 220px; height: 10px; border: var(--sb-rule) solid var(--sb-bone); }
+.sb-meter__fill  { height: 100%; background: var(--sb-blaze); }
+.sb-meter__thumb { position: absolute; top: -6px; width: 2px; height: 18px; background: var(--sb-blaze); }
+
+/* Knockout plate — REQUIRED whenever HUD crosses a planet. Non-negotiable. */
+.sb-plate { background: var(--sb-ink); padding: 10px 14px 12px; }
+
+/* ── Ship LOD helper ───────────────────────────────────────────────────────── */
+.sb-ship { display: block; height: auto; image-rendering: auto; }
+/* LOD: gameplay ~102px wide · HUD/lives ~54px wide */
+
+/* ── Portrait-mode "rotate your device" overlay ────────────────────────────── */
+#portrait-overlay {
+  display:         none;     /* hidden by default (landscape) */
+  position:        fixed;
+  inset:           0;
+  z-index:         9999;
+  background:      var(--sb-ink);
+  color:           var(--sb-bone);
+  font-family:     var(--sb-label);
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  gap:             16px;
+  text-align:      center;
+  padding:         24px;
+}
+
+#portrait-overlay .rotate-icon {
+  font-size:  88px;
+  color:      var(--sb-blaze);
+  animation:  spin 2s linear infinite;
+}
+
+#portrait-overlay p {
+  font-size:      22px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+#portrait-overlay .sub {
+  font-size:      14px;
+  color:          rgba(239,233,221,.55);
+  letter-spacing: 0.05em;
+  text-transform: none;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+/* Show overlay on portrait phones */
+@media screen and (orientation: portrait) and (max-width: 768px) {
+  #portrait-overlay { display: flex; }
+}

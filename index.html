@@ -2,34 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store" />
   <title>Solar Blaster</title>
-
-  <!-- Orbitron — retro/sci-fi font for all in-game text -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
-
-  <link rel="stylesheet" href="styles/style.css" />
-
-  <!-- Phaser 3 — loaded via CDN before our game modules -->
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Barlow+Condensed:wght@500;700&family=Orbitron:wght@700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles/hub.css" />
 </head>
 <body>
+  <main class="hub">
+    <p class="hub-eyebrow">SOLAR BLASTER</p>
+    <h1 class="hub-title">Choose a version</h1>
+    <p class="hub-sub">V1 and V2 keep separate saves. Pick one and play.</p>
 
-  <!-- ── Portrait-mode overlay ──────────────────────────────────────────────
-       Shown on mobile when the device is held vertically.
-       Phaser's canvas sits behind this via z-index.                        -->
-  <div id="portrait-overlay">
-    <div class="rotate-icon">↻</div>
-    <p>ROTATE YOUR DEVICE</p>
-    <p class="sub">Solar Blaster plays in landscape</p>
-  </div>
-
-  <!-- Phaser mounts its canvas directly into the body (config has no parent set,
-       so it defaults to document.body). The CSS below positions it correctly. -->
-
-  <!-- Main game module — loaded after Phaser so the global Phaser object exists -->
-  <script type="module" src="src/main.js"></script>
+    <div class="hub-cards">
+      <a class="hub-card hub-card--v1" href="v1/">
+        <span class="hub-card-ver">V1</span>
+        <span class="hub-card-name">Neon Outward</span>
+        <span class="hub-card-desc">Mercury → Neptune. Neon skins, classic high score, outward campaign.</span>
+      </a>
+      <a class="hub-card hub-card--v2" href="v2/">
+        <span class="hub-card-ver">V2</span>
+        <span class="hub-card-name">Stencil Riso</span>
+        <span class="hub-card-desc">Neptune → Sun. Magazines, three-phase levels, Stencil Riso look.</span>
+      </a>
+    </div>
+  </main>
 </body>
 </html>

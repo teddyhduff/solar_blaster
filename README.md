@@ -1,181 +1,112 @@
-# Solar Blaster 🚀
+# Solar Blaster
 
-A neon-styled 2D arcade space shooter — blast through all 8 planets of the solar system, defeat their bosses, and rack up the high score.
+Arcade space shooter — **V1** and **V2** ship together with separate saves.
 
----
+## Quick start
 
-## Running locally
-
-**One command from the project root:**
-
-```bash
+```sh
 npx serve .
+# Open http://localhost:3000
 ```
 
-Then open the URL shown (usually `http://localhost:3000`).
+Pick a version on the hub page:
+- **[V1 — Neon Outward](v1/)** — Mercury → Neptune
+- **[V2 — Stencil Riso](v2/)** — Neptune → Sun
 
-Any static file server works:
-- `npx serve .`
-- VS Code "Live Server" extension (right-click `index.html` → Open with Live Server)
-- Python: `python -m http.server 8000`
-
-> **Important:** The game uses ES modules, so it must be served over HTTP — it won't work if you just double-click `index.html` and open it as a `file://` URL.
+Deploys to Vercel as a static site (no backend).
 
 ---
 
-## Deploying to Vercel
+## Saves (isolated)
 
-1. Push this repo to GitHub (or GitLab / Bitbucket).
-2. Go to [vercel.com](https://vercel.com) and click **New Project**.
-3. Import the repo.
-4. **Zero configuration needed** — Vercel auto-detects it as a static site.
-5. Click **Deploy**.
-
-That's it. The live URL is ready in about 30 seconds.
-
----
-
-## Controls
-
-| Input    | Move              | Fire                     | Switch weapon             |
-|----------|-------------------|--------------------------|---------------------------|
-| Keyboard | Arrow keys / WASD | Hold Space               | Keys 1 / 2 / 3            |
-| Mouse    | Hold + drag       | Hold left button         | Scroll wheel or 1 / 2 / 3 |
-| Touch    | Drag (left side)  | FIRE button (right side) | LAS / PLM / MSL buttons   |
-
-**Pause:** `ESC` or `P` on keyboard, or the ⏸ button on mobile.
-
----
-
-## Weapons
-
-| # | Name           | Behaviour                        |
-|---|----------------|----------------------------------|
-| 1 | Laser          | Fast, thin bolts — fast fire rate |
-| 2 | Plasma Spread  | 3-way fan — great vs clusters     |
-| 3 | Missiles       | Slow, homing, high damage         |
-
-All three weapons are available from the start. Upgrade their power in the Hangar.
-
----
-
-## Progression
-
-- Beat each planet's boss to unlock the next planet.
-- Coins collected during a run are **always kept**, even if you die.
-- Spend coins in the **Hangar** on upgrades and cosmetic skins.
-- Your high score is the best single-run score ever achieved.
-- Everything persists across page refreshes via `localStorage`.
-
----
-
-## Tuning the balance
-
-All numeric gameplay values live in one file:
-
-```
-src/data/balance.js
-```
-
-Open it in any text editor and change the numbers — no build step needed. Key values:
-
-| Constant | What it controls |
+| Version | localStorage prefix |
 |---|---|
-| `BASE_SHIELD` | Starting max HP |
-| `SHIELD_REGEN_RATE` | HP regenerated per second |
-| `LEVEL_DURATION` | Seconds of asteroid phase before boss spawns |
-| `COIN_DROP_CHANCE` | Probability an asteroid drops a coin |
-| `BOSS_HP_MERCURY` | Mercury boss health (other bosses scale from this) |
-| `CROSS_PLANET_ASTEROID_SPEED_SCALE` | How much harder each successive planet is |
-| `UPGRADE_TIER1/2/3_COST` | Hangar upgrade prices |
+| V1 | `solarBlaster.v1.*` |
+| V2 | `solarBlaster.v2.*` |
+
+Playing one version never overwrites the other. Legacy unprefixed keys are migrated into the matching namespace on first boot of that version.
 
 ---
 
-## Swapping in real audio
+## V2 campaign
 
-The game generates all sounds procedurally using the Web Audio API. To swap in real audio files:
+9 destinations in fixed inward order: **Neptune → Uranus → Saturn → Jupiter → Mars → Earth → Venus → Mercury → Sun**.
 
-1. Add your files to `assets/audio/` (create the folder).
-2. In `src/scenes/BootScene.js`, add a load call for each file:
-   ```js
-   this.load.audio('laser',       'assets/audio/laser.mp3');
-   this.load.audio('explosion',   'assets/audio/explosion.mp3');
-   this.load.audio('shield_hit',  'assets/audio/shield_hit.mp3');
-   // etc.
-   ```
-3. In `src/systems/AudioSystem.js`, replace the `_tone()` / `_noise()` calls
-   inside each `play*()` method with:
-   ```js
-   this.scene.sound.play('laser', { volume: 0.5 });
-   ```
+Each level runs three phases:
+- **Approach** (~45s) — planet disc on the horizon, sparse asteroids, gentle hazard
+- **Descent** (~60s) — planet grows; moons drift through; denser asteroids; hazard intensifies
+- **Conquest** — planet fills the frame; boss arrives; defeat it to unlock the next destination
 
-**Full list of audio cues to replace:**
+### Controls (V2)
 
-| Method | Sound event |
+| Input | Action |
 |---|---|
-| `playLaserFire()` | Laser weapon fire |
-| `playSpreadFire()` | Plasma spread fire |
-| `playMissileFire()` | Missile launch |
-| `playExplosionSmall()` | Small asteroid explosion |
-| `playExplosionLarge()` | Large asteroid / big explosion |
-| `playShieldHit()` | Shield taking damage |
-| `playCoinPickup()` | Collecting a coin |
-| `playGemPickup()` | Collecting a rare gem |
-| `playPowerUpPickup()` | Collecting a power-up |
-| `playBossAlert()` | Boss spawning alert |
-| `playLevelWin()` | Level completed |
-| `playLevelLose()` | Ship destroyed |
-| `playUIClick()` | Button click |
-| `startMusic(false)` | Asteroid-phase Aussie hip-hop style loop |
-| `startMusic(true)` | Boss-fight denser hip-hop variant |
+| WASD / Arrow keys | Move ship |
+| SPACE | Fire |
+| 1 / 2 / 3 | Switch weapon |
+| R | Reload current magazine |
+| Scroll wheel | Cycle weapons |
+| Mouse hold | Move toward cursor + fire |
+| Touch left side | Drag to move |
+| Touch FIRE button | Fire |
+| Touch RELOAD button | Reload |
+| Touch 1/2/3 chips | Switch weapon |
+| ESC / P | Pause |
+
+### Visual style — Stencil Riso
+
+**Three inks only. No neon.**
+
+| Token | Value | Use |
+|---|---|---|
+| `bone` | `#efe9dd` | Hulls, HUD strokes, asteroids, numerals |
+| `blaze` | `#ff4d17` | Thrust, guns, damage, danger, planets |
+| `teal` | `#0f7a6a` | Shields and pickups only |
+| `ink` | `#16181c` | Ground, canopies, HUD knockout plates |
+
+### V2 persistence
+
+| Key | What it stores |
+|---|---|
+| `solarBlaster.v2.coins` | Total coins banked across all runs |
+| `solarBlaster.v2.unlocked` | Array of destination IDs (default: `["neptune"]`) |
+| `solarBlaster.v2.highScores` | Per-planet high score map |
+| `solarBlaster.v2.upgrades` | `{ weaponPower, shieldCapacity, speed, magazineCapacity, skin }` |
+| `solarBlaster.v2.campaignComplete` | `"true"` once Sun is defeated |
+
+Tune V2 numbers in [`v2/src/data/balance.js`](v2/src/data/balance.js). `GAME_SPEED` drives all planets.
 
 ---
 
-## Project structure
+## V1 campaign
+
+Outward journey **Mercury → Venus → Earth → Mars → Jupiter → Saturn → Uranus → Neptune**. Neon palette, per-skin upgrade tracks, single global high score.
+
+V1 code lives under [`v1/`](v1/).
+
+---
+
+## Layout
 
 ```
-index.html              — Entry point (loads Phaser CDN + src/main.js)
-styles/style.css        — Full-bleed canvas, portrait overlay
-src/
-  main.js               — Phaser config + scene registration
-  scenes/
-    BootScene.js        — Boot + preload
-    TitleScene.js       — Title screen
-    PlanetSelectScene.js — Planet selection / level select
-    GameScene.js        — Main gameplay (asteroid phase + boss fight)
-    HangarScene.js      — Upgrade shop
-    GameOverScene.js    — Shield depleted screen
-    VictoryScene.js     — Boss defeated screen
-  entities/
-    Ship.js             — Player ship (input, weapons, shield)
-    Asteroid.js         — Asteroid (sizes, splitting)
-    Boss.js             — Boss (8 unique designs, 2-phase attacks)
-    Projectile.js       — Player bullets/missiles
-    Pickup.js           — Coins, gems, shield boosts, weapon tokens
-  systems/
-    SaveData.js         — localStorage read/write wrapper
-    DifficultyCurve.js  — Spawn rate + speed scaling
-    HazardSystem.js     — Planet-specific hazards
-    AudioSystem.js      — Web Audio SFX + Aussie hip-hop style music loop
-  data/
-    balance.js          — ← Edit this to tune the game
-    planets.js          — 8 planet configs (hazard, boss, colours)
-    weapons.js          — Weapon stats per upgrade tier
-    upgrades.js         — Hangar upgrade tracks + skin definitions
+index.html                 Version picker hub
+styles/hub.css             Hub styles
+v1/                        Classic Neon Outward build
+  index.html
+  src/ …
+  styles/
+v2/                        Stencil Riso inward campaign
+  index.html
+  src/ …
+  styles/
+files/                     Specs + design handoff
 ```
 
 ---
 
-## Acceptance checklist
+## Tech stack
 
-Run through these to confirm everything works:
-
-- [ ] Fresh browser profile (clear site data) → only Mercury unlocked, 0 coins, no high score shown
-- [ ] Play Mercury → collect coins → die → coins are kept, retry offered
-- [ ] Beat Mercury's boss → Venus unlocks → refresh page → Venus still unlocked
-- [ ] Buy an upgrade in the Hangar → refresh → upgrade persists and visibly affects gameplay
-- [ ] Resize the window → landscape scales correctly; portrait on mobile shows rotate overlay
-- [ ] Touch controls work: drag to move, FIRE button fires, LAS/PLM/MSL switch weapons
-- [ ] Set a high score, close the tab, reopen → high score displayed on Planet Select
-- [ ] All 8 planets accessible after sequential unlocking
-- [ ] Pause (ESC/P) mid-level → game freezes → resume continues correctly
+- **Phaser 3** (CDN) — no npm required
+- **Vanilla JS ES modules**
+- **Web Audio API** — procedural SFX
+- **localStorage** — separate V1 / V2 namespaces

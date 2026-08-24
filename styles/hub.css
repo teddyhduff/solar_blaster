@@ -1,0 +1,112 @@
+/* Hub — version picker for Solar Blaster V1 / V2 */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100%;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(15, 122, 106, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 15%, rgba(255, 77, 23, 0.16), transparent 50%),
+    #16181c;
+  color: #efe9dd;
+  font-family: 'Barlow Condensed', sans-serif;
+}
+
+.hub {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 64px;
+  text-align: center;
+}
+
+.hub-eyebrow {
+  font: 700 13px/1 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.42em;
+  color: #ff4d17;
+  margin-bottom: 18px;
+}
+
+.hub-title {
+  font: 400 clamp(42px, 8vw, 72px)/0.95 'Saira Stencil One', sans-serif;
+  color: #efe9dd;
+  text-shadow: 4px 4px 0 rgba(255, 77, 23, 0.55);
+  margin-bottom: 14px;
+}
+
+.hub-sub {
+  max-width: 36rem;
+  font: 500 18px/1.4 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.06em;
+  color: rgba(239, 233, 221, 0.62);
+  margin-bottom: 48px;
+}
+
+.hub-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 280px));
+  gap: 24px;
+  width: 100%;
+  max-width: 640px;
+  justify-content: center;
+}
+
+.hub-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 28px 24px 26px;
+  text-decoration: none;
+  color: inherit;
+  border: 2px solid rgba(239, 233, 221, 0.55);
+  background: rgba(16, 18, 22, 0.72);
+  transition: border-color 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+.hub-card:hover,
+.hub-card:focus-visible {
+  border-color: #ff4d17;
+  background: rgba(16, 18, 22, 0.92);
+  transform: translateY(-3px);
+  outline: none;
+}
+
+.hub-card-ver {
+  font: 700 12px/1 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.34em;
+  color: #ff4d17;
+}
+
+.hub-card-name {
+  font: 400 28px/1 'Saira Stencil One', sans-serif;
+  color: #efe9dd;
+}
+
+.hub-card--v1 .hub-card-name {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+.hub-card-desc {
+  font: 500 15px/1.35 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.04em;
+  color: rgba(239, 233, 221, 0.55);
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  .hub-cards {
+    grid-template-columns: 1fr;
+    max-width: 360px;
+  }
+}

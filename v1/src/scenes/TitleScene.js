@@ -98,6 +98,15 @@ export class TitleScene extends Phaser.Scene {
     });
 
     // ── Version / credit ────────────────────────────────────────────────────
+    this.add.text(cx, height - 48, 'VERSIONS', {
+      fontFamily: "'Orbitron', 'Courier New', monospace",
+      fontSize:   '13px',
+      color:      '#667788',
+    }).setOrigin(0.5).setDepth(4).setInteractive({ useHandCursor: true })
+      .on('pointerover', function () { this.setColor('#00F5FF'); })
+      .on('pointerout',  function () { this.setColor('#667788'); })
+      .on('pointerdown', () => { window.location.href = '../'; });
+
     this.add.text(cx, height - 22, 'Use keyboard, mouse or touch · Collect coins · Beat all 8 planets', {
       fontFamily: "'Orbitron', 'Courier New', monospace",
       fontSize:   '13px',

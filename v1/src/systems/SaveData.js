@@ -1,13 +1,23 @@
 // SaveData.js — All localStorage reads and writes go through here.
-// Keys match the schema from spec Section 17.
+// V1 schema, namespaced under solarBlaster.v1.* so V2 saves stay intact.
 // Default state: Mercury only unlocked, 0 coins, no high score, all upgrade tiers 0, skin cyan.
 
-const KEYS = {
+const LEGACY = {
   HIGH_SCORE:       'solarBlaster.highScore',
   COINS:            'solarBlaster.coins',
   UNLOCKED_PLANETS: 'solarBlaster.unlockedPlanets',
   UPGRADES:         'solarBlaster.upgrades',
 };
+
+const KEYS = {
+  HIGH_SCORE:       'solarBlaster.v1.highScore',
+  COINS:            'solarBlaster.v1.coins',
+  UNLOCKED_PLANETS: 'solarBlaster.v1.unlockedPlanets',
+  UPGRADES:         'solarBlaster.v1.upgrades',
+  SCHEMA_VERSION:   'solarBlaster.v1.schemaVersion',
+};
+
+const CURRENT_VERSION = 1;
 
 // Per-skin default upgrade tiers (all 0 = no upgrades purchased).
 const DEFAULT_SHIP_UPGRADES = {
@@ -40,6 +50,54 @@ function mergeUpgrades(saved) {
     ships,
   };
 }
+
+function looksLikeV1Upgrades(raw) {
+  try {
+    const u = JSON.parse(raw);
+    return u && typeof u === 'object' && (u.ships || ['cyan', 'magenta', 'gold', 'green', 'white'].includes(u.skin));
+  } catch {
+    return false;
+  }
+}
+
+function migrate() {
+  const version = parseInt(localStorage.getItem(KEYS.SCHEMA_VERSION) || '0', 10);
+  if (version >= CURRENT_VERSION) return;
+
+  const legacyUpgrades = localStorage.getItem(LEGACY.UPGRADES);
+  const hasLegacyV1 =
+    localStorage.getItem(LEGACY.HIGH_SCORE) !== null ||
+    localStorage.getItem(LEGACY.UNLOCKED_PLANETS) !== null ||
+    (legacyUpgrades && looksLikeV1Upgrades(legacyUpgrades));
+
+  if (hasLegacyV1) {
+    localStorage.setItem(KEYS.HIGH_SCORE, localStorage.getItem(LEGACY.HIGH_SCORE) || '0');
+    localStorage.setItem(
+      KEYS.UNLOCKED_PLANETS,
+      localStorage.getItem(LEGACY.UNLOCKED_PLANETS) || JSON.stringify(['mercury'])
+    );
+    if (legacyUpgrades && looksLikeV1Upgrades(legacyUpgrades)) {
+      localStorage.setItem(KEYS.UPGRADES, legacyUpgrades);
+      localStorage.setItem(KEYS.COINS, localStorage.getItem(LEGACY.COINS) || '0');
+      localStorage.removeItem(LEGACY.UPGRADES);
+      localStorage.removeItem(LEGACY.COINS);
+    } else {
+      localStorage.setItem(KEYS.UPGRADES, JSON.stringify(DEFAULT_UPGRADES));
+      localStorage.setItem(KEYS.COINS, '0');
+    }
+    localStorage.removeItem(LEGACY.HIGH_SCORE);
+    localStorage.removeItem(LEGACY.UNLOCKED_PLANETS);
+  } else {
+    localStorage.setItem(KEYS.HIGH_SCORE, '0');
+    localStorage.setItem(KEYS.COINS, '0');
+    localStorage.setItem(KEYS.UNLOCKED_PLANETS, JSON.stringify(['mercury']));
+    localStorage.setItem(KEYS.UPGRADES, JSON.stringify(DEFAULT_UPGRADES));
+  }
+
+  localStorage.setItem(KEYS.SCHEMA_VERSION, String(CURRENT_VERSION));
+}
+
+migrate();
 
 export const SaveData = {
 
@@ -149,6 +207,6 @@ export const SaveData = {
   /** Wipe all saved data back to defaults. Open browser console and call SaveData.resetAll() to use. */
   resetAll() {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-    console.log('[SaveData] All data reset.');
+    console.log('[SaveData] All V1 data reset.');
   },
 };
