@@ -142,6 +142,7 @@ export class WeaponSystem {
     if (this._mags[w.id] <= 0) {
       this._mags[w.id] = 0;
       this._reloadPromptVisible = true;
+      this.scene.events.emit('weaponEmpty', w.id);
     }
 
     // Set fire cooldown (rapid-fire reduces it)
@@ -164,6 +165,8 @@ export class WeaponSystem {
         angle:    baseAngle + Phaser.Math.DegToRad(offset),
         damage,
         homing:   w.id === 'missiles',
+        pierce:   w.id === 'laser' ? 1 : 0,
+        smear:    w.id === 'plasma',
       });
     }
 

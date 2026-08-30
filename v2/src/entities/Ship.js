@@ -10,6 +10,13 @@ import { WeaponSystem }   from '../systems/WeaponSystem.js';
 import { drawShip, C }    from '../systems/StencilArt.js';
 import { getSkin }        from '../data/upgrades.js';
 
+// Local-space circles matching the REFLEX 07 silhouette (fuselage + swept wings).
+const HIT_CIRCLES = [
+  { x:  0,  y:   0, r: 12 },  // fuselage
+  { x: -22, y: -26, r: 16 },  // upper wing
+  { x: -22, y:  26, r: 16 },  // lower wing
+];
+
 export class Ship {
   /** @param {Phaser.Scene} scene */
   constructor(scene) {
@@ -27,6 +34,12 @@ export class Ship {
     this.skinId   = SaveData.getSkin();
     this.skinData = getSkin(this.skinId);
     this.marking  = this.skinData ? this.skinData.marking : 'none';
+    this.upgrades = {
+      shield:   shieldTier,
+      speed:    speedTier,
+      weapon:   SaveData.getUpgradeTier('weaponPower'),
+      magazine: SaveData.getUpgradeTier('magazineCapacity'),
+    };
 
     // ── Timers ─────────────────────────────────────────────────────────────────
     this._iFrameTimer  = 0;
@@ -187,6 +200,17 @@ export class Ship {
     this.scene.events.emit('shipShieldChanged', this.shield, this.maxShield);
   }
 
+  /** Circle-vs-ship hit test. Wings and fuselage both count. */
+  hitsCircle(cx, cy, r) {
+    for (const h of HIT_CIRCLES) {
+      const dx = (this.x + h.x) - cx;
+      const dy = (this.y + h.y) - cy;
+      const rr = h.r + r;
+      if (dx * dx + dy * dy <= rr * rr) return true;
+    }
+    return false;
+  }
+
   // ── Update (called every frame) ────────────────────────────────────────────────
 
   /**
@@ -247,7 +271,8 @@ export class Ship {
     this.weapons.update(delta);
 
     // ── Trail ────────────────────────────────────────────────────────────────
-    this._trail.push({ x: this.x - 50, y: this.y, age: 0, maxAge: 220 });
+    const trailAge = 220 + (this.upgrades.speed || 0) * 70;
+    this._trail.push({ x: this.x - 50, y: this.y, age: 0, maxAge: trailAge });
     for (let i = this._trail.length - 1; i >= 0; i--) {
       this._trail[i].age += delta;
       if (this._trail[i].age > this._trail[i].maxAge) this._trail.splice(i, 1);
@@ -277,7 +302,7 @@ export class Ship {
   _redrawBody(flashing) {
     this.bodyG.clear();
     if (!flashing) {
-      drawShip(this.bodyG, 0, 0, 'gameplay', this.marking);
+      drawShip(this.bodyG, 0, 0, 'gameplay', this.marking, this.upgrades);
     } else {
       this.bodyG.fillStyle(C.BONE, 1);
       this.bodyG.fillPoints([
@@ -301,14 +326,16 @@ export class Ship {
     const hud = this.weapons.getHudState();
     const showReload = hud.reloading && hud.reloadProgress > 0;
     const showRapid  = !!hud.rapidFireActive;
-    if (!showReload && !showRapid) {
+    const showEmpty  = hud.showReloadPrompt;
+    if (!showReload && !showRapid && !showEmpty) {
       if (this._ringKey !== 'off') {
         this._ringKey = 'off';
         this.g.clear();
       }
       return;
     }
-    const ringKey = `${showReload ? hud.reloadProgress.toFixed(2) : 0}|${showRapid ? 1 : 0}|${this.x | 0}|${this.y | 0}`;
+    const blink = Math.floor(hud.reloadPromptBlink / 350) % 2 === 0;
+    const ringKey = `${showReload ? hud.reloadProgress.toFixed(2) : 0}|${showRapid ? 1 : 0}|${showEmpty ? (blink ? 1 : 0) : 0}|${this.x | 0}|${this.y | 0}`;
     if (ringKey === this._ringKey) return;
     this._ringKey = ringKey;
 
@@ -322,6 +349,10 @@ export class Ship {
     if (showRapid) {
       this.g.lineStyle(2, C.BLAZE, 0.5);
       this.g.strokeCircle(this.x, this.y, 32);
+    }
+    if (showEmpty && blink) {
+      this.g.lineStyle(2, C.BLAZE, 0.85);
+      this.g.strokeCircle(this.x, this.y, 36);
     }
   }
 

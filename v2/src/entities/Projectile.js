@@ -4,11 +4,12 @@
 // Drawn once at origin; moved via setPosition.
 
 import { C } from '../systems/StencilArt.js';
+import { BALANCE } from '../data/balance.js';
 
 export class Projectile {
   /**
    * @param {Phaser.Scene} scene
-   * @param {object} shot  { weapon, x, y, angle, damage, homing }
+   * @param {object} shot  { weapon, x, y, angle, damage, homing, pierce, smear }
    */
   constructor(scene, shot) {
     this.scene   = scene;
@@ -16,6 +17,10 @@ export class Projectile {
     this.damage  = shot.damage;
     this.homing  = shot.homing || false;
     this.active  = true;
+    this.pierce  = shot.pierce || 0;
+    this.smear   = !!shot.smear;
+    this._hitIds = new Set();
+    this._smearAcc = 0;
 
     this.x = shot.x;
     this.y = shot.y;
@@ -56,9 +61,10 @@ export class Projectile {
     if (!this.active) return;
     const dt = delta / 1000;
 
-    // Mild homing toward boss/nearest target for missiles
-    if (this.homing && this.scene.boss?.alive) {
-      const bx = this.scene.boss.x, by = this.scene.boss.y;
+    // Mild homing toward the current lock target (boss / moon / large rock / enemy)
+    const lock = this.scene.lockTarget;
+    if (this.homing && lock) {
+      const bx = lock.x, by = lock.y;
       const tx = bx - this.x, ty = by - this.y;
       const len = Math.sqrt(tx * tx + ty * ty);
       if (len > 10) {
@@ -72,8 +78,18 @@ export class Projectile {
       }
     }
 
+    const prevX = this.x, prevY = this.y;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
+
+    if (this.smear && this.scene.spawnPlasmaSmear) {
+      const dx = this.x - prevX, dy = this.y - prevY;
+      this._smearAcc += Math.sqrt(dx * dx + dy * dy);
+      if (this._smearAcc >= BALANCE.PLASMA_SMEAR_GAP) {
+        this._smearAcc = 0;
+        this.scene.spawnPlasmaSmear(this.x, this.y);
+      }
+    }
 
     const { width, height } = this.scene.scale;
     if (this.x < -40 || this.x > width + 40 || this.y < -40 || this.y > height + 40) {
