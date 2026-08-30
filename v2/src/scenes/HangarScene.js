@@ -177,11 +177,19 @@ export class HangarScene extends Phaser.Scene {
     const cx = width * 0.50, cy = height * 0.46;
     this._shipAngle += 0.0005 * delta;
     const bob = Math.sin(this._shipAngle * 1.2) * 5;
-    const marking = SaveData.getSkin();
-    if (marking !== this._shipMarking) {
-      this._shipMarking = marking;
+    const skin = getSkin(SaveData.getSkin());
+    const marking = skin?.marking || 'none';
+    const upgrades = {
+      shield:   SaveData.getUpgradeTier('shieldCapacity'),
+      speed:    SaveData.getUpgradeTier('speed'),
+      weapon:   SaveData.getUpgradeTier('weaponPower'),
+      magazine: SaveData.getUpgradeTier('magazineCapacity'),
+    };
+    const key = `${marking}|${upgrades.shield}|${upgrades.speed}|${upgrades.weapon}|${upgrades.magazine}`;
+    if (key !== this._shipMarking) {
+      this._shipMarking = key;
       this._shipG.clear();
-      drawShip(this._shipG, 0, 0, 'gameplay', marking);
+      drawShip(this._shipG, 0, 0, 'gameplay', marking, upgrades);
     }
     this._shipG.setPosition(cx, cy + bob);
   }
@@ -237,6 +245,8 @@ export class HangarScene extends Phaser.Scene {
         this._botX = this.scale.width * 0.50 + 120;
         this._drawBot(false);
         this._refreshUpgradePanels();
+        this._shipMarking = null;
+        this._drawShipOnLift(0);
         if (this._coinTxt) this._coinTxt.setText(`COINS: ${SaveData.getCoins()}`);
       },
     });

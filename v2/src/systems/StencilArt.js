@@ -120,12 +120,12 @@ function drawMisprint(g, points) {
  * lod: 'gameplay' (102px wide) | 'icon' (54px wide)
  * marking: skin marking id (see upgrades.js SKINS)
  */
-export function drawShip(g, cx, cy, lod = 'gameplay', marking = 'none') {
+export function drawShip(g, cx, cy, lod = 'gameplay', marking = 'none', upgrades = null) {
   const scale = lod === 'icon' ? 0.53 : 1.0;   // 54/102 ≈ 0.53
-  _drawReflex07(g, cx, cy, scale, marking);
+  _drawReflex07(g, cx, cy, scale, marking, upgrades);
 }
 
-function _drawReflex07(g, cx, cy, scale, marking) {
+function _drawReflex07(g, cx, cy, scale, marking, upgrades) {
   const s = scale;
 
   // All coordinates relative to the SVG viewport centre.
@@ -196,12 +196,16 @@ function _drawReflex07(g, cx, cy, scale, marking) {
     g.fillPoints(canopyPts, true);
   }
 
-  // ── Blaze thrust bars (twin, at tail) ─────────────────────────────────────
+  // ── Blaze thrust bars (twin, at tail; lengthens with Speed upgrades) ────
+  const speedT = upgrades?.speed ?? 0;
+  const thrustW = (17 + speedT * 5) * s;
   g.fillStyle(C.BLAZE, 1);
-  // Upper thrust bar
-  g.fillRect(cx - 51*s, cy - 8*s, 17*s, 5*s);
-  // Lower thrust bar
-  g.fillRect(cx - 51*s, cy + 3*s,  17*s, 5*s);
+  g.fillRect(cx - 51*s - speedT * 3*s, cy - 8*s, thrustW, 5*s);
+  g.fillRect(cx - 51*s - speedT * 3*s, cy + 3*s,  thrustW, 5*s);
+  if (speedT >= 2) {
+    g.fillStyle(C.BLAZE, 0.55);
+    g.fillRect(cx - 58*s - speedT * 2*s, cy - 2*s, 10*s, 4*s);
+  }
 
   // ── Bone 2px stencil stroke around body ───────────────────────────────────
   g.lineStyle(2 * s, C.BONE, 0.45);
@@ -209,6 +213,61 @@ function _drawReflex07(g, cx, cy, scale, marking) {
 
   // ── Skin marking ──────────────────────────────────────────────────────────
   _drawMarking(g, cx, cy, s, marking);
+
+  // ── Hangar / loadout geometry (purchased tracks change the silhouette) ──
+  _drawUpgradeGeometry(g, cx, cy, s, upgrades);
+}
+
+function _drawUpgradeGeometry(g, cx, cy, s, upgrades) {
+  if (!upgrades) return;
+  const shieldT = upgrades.shield ?? 0;
+  const weaponT = upgrades.weapon ?? 0;
+  const magT    = upgrades.magazine ?? 0;
+
+  // Shield: thicker bone plates on the wings.
+  if (shieldT > 0) {
+    g.fillStyle(C.BONE, 0.85);
+    const grow = 3 * shieldT * s;
+    g.fillRect(cx - 40*s, cy - 38*s - grow, 22*s, 5*s + grow);
+    g.fillRect(cx - 40*s, cy + 33*s, 22*s, 5*s + grow);
+    if (shieldT >= 2) {
+      g.lineStyle(2 * s, C.BONE, 0.55);
+      g.strokeCircle(cx - 6*s, cy, 16*s + shieldT * 2*s);
+    }
+  }
+
+  // Weapon power: blaze gun pods at the nose.
+  if (weaponT > 0) {
+    g.fillStyle(C.BLAZE, 0.90);
+    g.fillRect(cx + 40*s, cy - 3*s - weaponT * s, 14*s, 3*s);
+    g.fillRect(cx + 40*s, cy + weaponT * s, 14*s, 3*s);
+    if (weaponT >= 2) {
+      g.fillRect(cx + 8*s, cy - 18*s, 10*s, 3*s);
+      g.fillRect(cx + 8*s, cy + 15*s, 10*s, 3*s);
+    }
+  }
+
+  // Magazine: extra ink/bone crates on the hull.
+  if (magT > 0) {
+    g.fillStyle(C.INK, 0.70);
+    g.fillRect(cx - 36*s, cy - 4*s, 8*s + magT * 2*s, 8*s);
+    g.lineStyle(1 * s, C.BONE, 0.55);
+    g.strokeRect(cx - 36*s, cy - 4*s, 8*s + magT * 2*s, 8*s);
+  }
+}
+
+/** Lock diamond for missiles — drawn in world space. */
+export function drawLockDiamond(g, x, y, size = 16) {
+  const d = size;
+  g.lineStyle(2, C.BLAZE, 0.95);
+  g.strokePoints([
+    { x, y: y - d },
+    { x: x + d, y },
+    { x, y: y + d },
+    { x: x - d, y },
+  ], true);
+  g.lineStyle(1, C.BONE, 0.45);
+  g.strokeCircle(x, y, d * 0.45);
 }
 
 function _drawMarking(g, cx, cy, s, marking) {

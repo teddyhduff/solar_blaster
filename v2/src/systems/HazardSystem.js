@@ -557,6 +557,13 @@ export class HazardSystem {
     return { x: 0, y: 0, speedMult: 1, shieldDrain: drain };
   }
 
+  /** Earth rocket — circle hitbox while the launch is on-screen. */
+  getRocketHitbox() {
+    const s = this._state;
+    if (this.hazardId !== 'spaceJunk' || !s.rocketActive) return null;
+    return { x: s.rocketX, y: s.rocketY, r: 20 };
+  }
+
   // ── Cleanup ───────────────────────────────────────────────────────────────────
 
   destroy() {

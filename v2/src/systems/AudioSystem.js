@@ -225,25 +225,32 @@ export class AudioSystem {
   /**
    * Start the looping background music.
    * @param {boolean} isBoss  true = denser / tenser hip-hop groove for boss fights
+   * @param {number}  planetIndex  0 = Neptune (cold/sparse) … 8 = Sun (hot/dense)
    */
-  startMusic(isBoss = false) {
+  startMusic(isBoss = false, planetIndex = 0) {
     this.stopMusic();
     if (!this.ctx) return;
 
-    // ~90 BPM: 16th-note step every ~167ms.
-    const stepMs = isBoss ? 150 : 167;
-    // A minor pentatonic-ish bass (Aussie hip-hop vibe — punchy, sparse).
-    const bassNotes = isBoss
-      ? [55, 0, 55, 0, 65.4, 0, 55, 73.4, 55, 0, 49, 0, 55, 0, 65.4, 73.4]
-      : [55, 0, 0, 55, 65.4, 0, 55, 0, 49, 0, 55, 0, 73.4, 0, 65.4, 0];
+    const idx = Phaser.Math.Clamp(planetIndex ?? 0, 0, 8);
+    // Outer planets sit lower and slower; inward planets heat up.
+    const roots = [49.0, 52.0, 55.0, 58.3, 61.7, 65.4, 69.3, 73.4, 82.4];
+    const root = roots[idx];
+    const stepMs = Math.max(118, (isBoss ? 152 : 176) - idx * 5);
 
-    // Kick / snare patterns over 16 steps (1 bar of 16ths).
-    const kicks  = isBoss
+    const scale = [1, 0, 1.2, 0, 1.33, 0, 1, 1.5, 1, 0, 0.89, 0, 1, 0, 1.33, 1.5];
+    const bassNotes = scale.map((m, i) => {
+      if (isBoss) return m > 0 ? root * m : (i % 4 === 0 ? root : 0);
+      return m > 0 ? root * m : 0;
+    });
+
+    const kicks  = isBoss || idx >= 5
       ? [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0]
       : [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0];
     const snares = isBoss
       ? [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0]
       : [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+
+    const denseHats = isBoss || idx >= 4;
 
     let step = 0;
     const tick = () => {
@@ -254,14 +261,11 @@ export class AudioSystem {
       if (kicks[i])  this._kick(dest);
       if (snares[i]) this._snare(dest);
 
-      // Hats: 8ths normally, denser 16ths in boss fights.
-      if (isBoss || i % 2 === 0) {
-        this._hat(isBoss ? 0.10 : 0.07, dest);
+      if (denseHats || i % 2 === 0) {
+        this._hat(isBoss ? 0.10 : 0.06 + idx * 0.004, dest);
       }
-      // Extra open-feeling hat on offbeats.
       if (i % 4 === 2) this._hat(0.04, dest);
 
-      // Bass note.
       const bass = bassNotes[i];
       if (bass > 0) {
         this._tone(bass, 0.18, 'sine', isBoss ? 0.12 : 0.09, dest);

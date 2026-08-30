@@ -16,9 +16,11 @@ import { Moon }              from '../entities/Moon.js';
 import { Boss }              from '../entities/Boss.js';
 import { Pickup, PICKUP_TYPE } from '../entities/Pickup.js';
 import { Projectile }        from '../entities/Projectile.js';
+import { EnemyShip }         from '../entities/EnemyShip.js';
 import {
   C, bakePlanetImage, bakeInkGrain, drawHullBar, drawApproachMeter, drawPlate,
   drawPickupCoin, drawPickupGem, drawPickupShield, drawPickupAmmo, drawPickupRapidFire,
+  drawLockDiamond,
 } from '../systems/StencilArt.js';
 
 const BACKDROP_TEX = 'planetBackdrop';
@@ -46,9 +48,17 @@ export class GameScene extends Phaser.Scene {
     this.projectiles  = [];
     this.pickups      = [];
     this.moons        = [];
+    this.enemies      = [];
+    this.smears       = [];
     this.boss         = null;
     this._bossProj    = [];
     this._particles   = [];
+    this._combo       = 1;
+    this._comboTimer  = 0;
+    this._hitstop     = 0;
+    this._enemyTimer  = BALANCE.ENEMY_SPAWN_FIRST_MS;
+    this._taughtReload = false;
+    this.lockTarget   = null;
 
     // HUD display objects (cleared between runs)
     this._hudG      = null;
@@ -100,6 +110,9 @@ export class GameScene extends Phaser.Scene {
     // ── Ship events ───────────────────────────────────────────────────────────
     this.events.on('shipDestroyed', this._onShipDestroyed, this);
     this.events.on('conquestComplete', this._onConquestComplete, this);
+    this.events.on('shipHit', this._onShipHit, this);
+    this.events.on('hexPocketOpen', this._onHexPocket, this);
+    this.events.on('weaponEmpty', this._onFirstReload, this);
 
     // ── HUD ───────────────────────────────────────────────────────────────────
     this._buildHUD();
@@ -117,7 +130,17 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once('shutdown', () => this._shutdown());
 
-    this.audio.startMusic(false);
+    this.audio.startMusic(false, this.planetData.index ?? 0);
+
+    this._juiceG = this.add.graphics().setDepth(16);
+
+    // First-run teach on Neptune before Uranus is unlocked.
+    const firstRun = this.planetData.id === 'neptune' && !SaveData.isUnlocked('uranus');
+    if (firstRun) {
+      this.time.delayedCall(2800, () => {
+        if (this.gameState === STATE.PLAYING) this._showBanner('HOLD FIRE · R TO RELOAD', 2800);
+      });
+    }
   }
 
   // ── Starfield ────────────────────────────────────────────────────────────────
@@ -154,6 +177,11 @@ export class GameScene extends Phaser.Scene {
 
     lbl(174, 28, 'COINS');
     this._coinTxt = num(174, 38, '0').setFontSize('32px');
+
+    this._comboTxt = this.add.text(30, 76, '', {
+      fontFamily: "'Barlow Condensed', sans-serif",
+      fontSize: '14px', color: '#ff4d17', fontStyle: 'bold', letterSpacing: 3,
+    }).setDepth(D);
 
     lbl(318, 28, 'ARMED');
     this._wepChip = this.add.text(318, 42, '01 LASER', {
@@ -360,6 +388,17 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this._hitstop > 0) {
+      this._hitstop -= delta;
+      this._drawHUD();
+      return;
+    }
+
+    if (this._comboTimer > 0) {
+      this._comboTimer -= delta;
+      if (this._comboTimer <= 0) this._combo = 1;
+    }
+
     // ── Phase update ──────────────────────────────────────────────────────────
     const phaseEvents = this.phases.update(delta);
     for (const ev of phaseEvents) {
@@ -394,6 +433,13 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Earth rocket collision
+    const rocket = this.hazard.getRocketHitbox?.();
+    if (rocket && this.ship?.alive && this.ship.hitsCircle(rocket.x, rocket.y, rocket.r)) {
+      this.ship.takeDamage(BALANCE.DAMAGE_ROCKET);
+      this._shakeCamera(8, 320);
+    }
+
     // ── Ship update ───────────────────────────────────────────────────────────
     let newShots = [];
     if (this.ship?.alive) {
@@ -415,6 +461,12 @@ export class GameScene extends Phaser.Scene {
         );
         this._asteroidTimer = baseInterval * this.phases.spawnIntervalMult;
       }
+
+      this._enemyTimer -= delta;
+      if (this._enemyTimer <= 0 && this.enemies.length < BALANCE.ENEMY_MAX_ALIVE) {
+        this._spawnEnemy();
+        this._enemyTimer = BALANCE.ENEMY_SPAWN_MS;
+      }
     }
 
     // ── Update entities ───────────────────────────────────────────────────────
@@ -423,8 +475,8 @@ export class GameScene extends Phaser.Scene {
       a.update(delta);
       if (!a.active) { this.asteroids.splice(i, 1); continue; }
 
-      // Ship collision
-      if (this.ship?.alive && a.overlapsPoint(this.ship.x, this.ship.y)) {
+      // Ship collision (fuselage + wings)
+      if (this.ship?.alive && this.ship.hitsCircle(a.x, a.y, a.cfg.radius)) {
         this.ship.takeDamage(BALANCE[`DAMAGE_${a.sizeLabel}_ASTEROID`]);
         this._shakeCamera(6, 300);
         this._explodeAsteroid(a);
@@ -432,13 +484,26 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
 
+      // Near-miss: wing-graze without a hull hit
+      if (this.ship?.alive && !a._nearMissed
+          && this.ship.hitsCircle(a.x, a.y, a.cfg.radius + BALANCE.NEAR_MISS_PAD)) {
+        a._nearMissed = true;
+        this._awardScore(BALANCE.SCORE_NEAR_MISS, a.x, a.y, true);
+      }
+
       // Projectile hits
       for (let j = this.projectiles.length - 1; j >= 0; j--) {
         const p = this.projectiles[j];
-        if (!p.active) continue;
+        if (!p.active || p._hitIds.has(a)) continue;
         if (a.overlapsPoint(p.x, p.y)) {
+          p._hitIds.add(a);
           const died = a.hit(p.damage);
-          p.destroy(); this.projectiles.splice(j, 1);
+          const pierceThrough = p.pierce > 0 && a.size === ASTEROID_SIZE.SMALL;
+          if (pierceThrough) {
+            p.pierce -= 1;
+          } else {
+            p.destroy(); this.projectiles.splice(j, 1);
+          }
           if (died) {
             this._onAsteroidDestroyed(a);
             this.asteroids.splice(i, 1);
@@ -453,11 +518,59 @@ export class GameScene extends Phaser.Scene {
       const m = this.moons[i];
       m.update(delta);
       if (!m.active) { this.moons.splice(i, 1); continue; }
-      if (this.ship?.alive && m.overlapsPoint(this.ship.x, this.ship.y)) {
+      if (this.ship?.alive && this.ship.hitsCircle(m.x, m.y, m.radius)) {
         this.ship.takeDamage(BALANCE.DAMAGE_MOON);
         this._shakeCamera(10, 400);
       }
+      for (let j = this.projectiles.length - 1; j >= 0; j--) {
+        const p = this.projectiles[j];
+        if (!p.active || p._hitIds.has(m)) continue;
+        if (m.overlapsPoint(p.x, p.y)) {
+          p._hitIds.add(m);
+          m.hit(p.damage);
+          p.destroy(); this.projectiles.splice(j, 1);
+          if (!m.active) {
+            this._awardScore(BALANCE.SCORE_MOON, m.x, m.y);
+            this._hitstop = Math.max(this._hitstop, BALANCE.HITSTOP_BOSS_MS);
+            this.moons.splice(i, 1);
+          }
+          break;
+        }
+      }
     }
+
+    // Enemy ships
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      const shots = e.update(delta);
+      if (!e.active) { this.enemies.splice(i, 1); continue; }
+      for (const es of shots) this._addHostileShot(es);
+      if (this.ship?.alive && this.ship.hitsCircle(e.x, e.y, e.radius)) {
+        this.ship.takeDamage(BALANCE.ENEMY_DAMAGE);
+        this._shakeCamera(5, 220);
+        e.destroy();
+        this.enemies.splice(i, 1);
+        continue;
+      }
+      for (let j = this.projectiles.length - 1; j >= 0; j--) {
+        const p = this.projectiles[j];
+        if (!p.active || p._hitIds.has(e)) continue;
+        if (e.overlapsPoint(p.x, p.y)) {
+          p._hitIds.add(e);
+          const died = e.hit(p.damage);
+          if (!(p.pierce > 0)) { p.destroy(); this.projectiles.splice(j, 1); }
+          else p.pierce -= 1;
+          if (died) {
+            this._awardScore(BALANCE.ENEMY_SCORE, e.x, e.y);
+            this.enemies.splice(i, 1);
+          }
+          break;
+        }
+      }
+    }
+
+    // Plasma smears
+    this._updateSmears(delta);
 
     // Projectiles
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -471,7 +584,7 @@ export class GameScene extends Phaser.Scene {
       const pk = this.pickups[i];
       pk.update(delta);
       if (!pk.active) { this.pickups.splice(i, 1); continue; }
-      if (this.ship?.alive && pk.overlapsPoint(this.ship.x, this.ship.y)) {
+      if (this.ship?.alive && this.ship.hitsCircle(pk.x, pk.y, 20)) {
         this._collectPickup(pk);
         this.pickups.splice(i, 1);
       }
@@ -482,15 +595,7 @@ export class GameScene extends Phaser.Scene {
       const bossOut = this.boss.update(delta, this.ship?.x, this.ship?.y, this._bossProj);
       if (bossOut?.newProjectiles) {
         for (const bp of bossOut.newProjectiles) {
-          if (!bp._g) {
-            bp._g = this.add.graphics().setDepth(9);
-            bp._g.fillStyle(C.BLAZE, 0.45);
-            bp._g.fillCircle(4, 4, bp.radius);
-            bp._g.fillStyle(C.BLAZE, 1);
-            bp._g.fillCircle(0, 0, bp.radius);
-            bp._g.setPosition(bp.x, bp.y);
-          }
-          this._bossProj.push(bp);
+          this._addHostileShot(bp);
         }
       }
 
@@ -502,27 +607,33 @@ export class GameScene extends Phaser.Scene {
           this.boss.hit(p.damage);
           p.destroy(); this.projectiles.splice(j, 1);
           this._shakeCamera(3, 150);
+          this._hitstop = Math.max(this._hitstop, BALANCE.HITSTOP_BOSS_MS);
+          this._scorePop(p.x, p.y, 'HIT');
           if (!this.boss.alive) { this._onBossDefeated(); }
           break;
         }
       }
 
-      // Boss projectiles vs ship
-      for (let k = this._bossProj.length - 1; k >= 0; k--) {
-        const bp = this._bossProj[k];
-        if (!bp.active) {
-          try { bp._g?.destroy(); } catch {}
-          this._bossProj.splice(k, 1);
-          continue;
-        }
-        bp.update(delta);
-        if (this.ship?.alive && bp.overlapsPoint && bp.overlapsPoint(this.ship.x, this.ship.y)) {
-          this.ship.takeDamage(BALANCE.DAMAGE_BOSS_PROJECTILE);
-          bp.active = false;
-          this._shakeCamera(5, 200);
-        }
+    }
+
+    // Hostile shots (boss + enemy) vs ship — always, not only during Conquest
+    for (let k = this._bossProj.length - 1; k >= 0; k--) {
+      const bp = this._bossProj[k];
+      if (!bp.active) {
+        try { bp._g?.destroy(); } catch {}
+        this._bossProj.splice(k, 1);
+        continue;
+      }
+      bp.update(delta);
+      if (this.ship?.alive && this.ship.hitsCircle(bp.x, bp.y, bp.radius ?? 6)) {
+        this.ship.takeDamage(bp.damage ?? BALANCE.DAMAGE_BOSS_PROJECTILE);
+        bp.active = false;
+        this._shakeCamera(5, 200);
       }
     }
+
+    this.lockTarget = this._findLockTarget();
+    this._drawLock();
 
     // ── Camera shake ──────────────────────────────────────────────────────────
     if (this._shakeTimer > 0) {
@@ -559,6 +670,9 @@ export class GameScene extends Phaser.Scene {
     // Score / coins (text only — cheap)
     if (this._scoreTxt) this._scoreTxt.setText(String(this.score));
     if (this._coinTxt)  this._coinTxt.setText(String(this.coinsThisRun));
+    if (this._comboTxt) {
+      this._comboTxt.setText(this._combo > 1 ? `COMBO ×${this._combo}` : '');
+    }
 
     // Weapon chip
     const hudW = this.ship?.weapons.getHudState();
@@ -650,6 +764,157 @@ export class GameScene extends Phaser.Scene {
     this._shakeTimer = Math.max(this._shakeTimer, duration);
   }
 
+  _addHostileShot(bp) {
+    if (!bp._g) {
+      bp._g = this.add.graphics().setDepth(9);
+      const r = bp.radius ?? 6;
+      bp._g.fillStyle(C.BLAZE, 0.40);
+      if (bp.kind === 'beam') {
+        bp._g.fillRect(6, -2, r * 3, 4);
+        bp._g.fillStyle(C.BLAZE, 1);
+        bp._g.fillRect(0, -2, r * 3, 4);
+      } else if (bp.kind === 'boulder' || bp.kind === 'shard') {
+        bp._g.fillCircle(4, 4, r);
+        bp._g.fillStyle(C.BONE, 1);
+        bp._g.fillCircle(0, 0, r);
+      } else {
+        bp._g.fillCircle(4, 4, r);
+        bp._g.fillStyle(C.BLAZE, 1);
+        bp._g.fillCircle(0, 0, r);
+      }
+      bp._g.setPosition(bp.x, bp.y);
+    }
+    this._bossProj.push(bp);
+  }
+
+  _awardScore(base, x, y, nearMiss = false) {
+    const pts = nearMiss ? base : base * this._combo;
+    this.score += pts;
+    if (!nearMiss) {
+      this._combo = Math.min(BALANCE.COMBO_MAX, this._combo + 1);
+      this._comboTimer = BALANCE.COMBO_WINDOW_MS;
+    }
+    const label = nearMiss
+      ? `NEAR +${pts}`
+      : (this._combo > 2 ? `+${pts}  ×${this._combo - 1}` : `+${pts}`);
+    this._scorePop(x, y, label);
+  }
+
+  _scorePop(x, y, text) {
+    const shadow = this.add.text(x + 3, y + 3, text, {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '18px', color: '#ff4d17',
+    }).setOrigin(0.5).setDepth(17).setAlpha(0.5);
+    const t = this.add.text(x, y, text, {
+      fontFamily: "'Saira Stencil One', sans-serif",
+      fontSize: '18px', color: '#efe9dd',
+    }).setOrigin(0.5).setDepth(18);
+    this.tweens.add({
+      targets: [t, shadow],
+      y: y - 36,
+      alpha: 0,
+      duration: 720,
+      onComplete: () => { try { t.destroy(); shadow.destroy(); } catch {} },
+    });
+  }
+
+  _onShipHit() {
+    this._combo = 1;
+    this._comboTimer = 0;
+    if (this.audio) this.audio.playShieldHit?.();
+  }
+
+  _onFirstReload() {
+    if (this._taughtReload) return;
+    this._taughtReload = true;
+    this._showBanner('PRESS R TO RELOAD', 1800);
+  }
+
+  _onHexPocket({ x, y }) {
+    const n = BALANCE.HEX_COIN_COUNT;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const pk = new Pickup(this, PICKUP_TYPE.COIN, x + Math.cos(a) * 28, y + Math.sin(a) * 28);
+      this.pickups.push(pk);
+    }
+  }
+
+  spawnPlasmaSmear(x, y) {
+    this.smears.push({ x, y, age: 0, hit: new Set() });
+  }
+
+  _updateSmears(delta) {
+    if (!this._juiceG) return;
+    // smears are drawn into juiceG together with the lock
+    for (let i = this.smears.length - 1; i >= 0; i--) {
+      const s = this.smears[i];
+      s.age += delta;
+      if (s.age > BALANCE.PLASMA_SMEAR_MS) { this.smears.splice(i, 1); continue; }
+      const r = BALANCE.PLASMA_SMEAR_R;
+      const dmg = (target, id) => {
+        if (s.hit.has(id)) return false;
+        const dx = target.x - s.x, dy = target.y - s.y;
+        const tr = target.cfg?.radius ?? target.radius ?? 16;
+        if (dx * dx + dy * dy > (r + tr) * (r + tr)) return false;
+        s.hit.add(id);
+        return target.hit(BALANCE.PLASMA_SMEAR_DAMAGE);
+      };
+      for (let k = this.asteroids.length - 1; k >= 0; k--) {
+        const a = this.asteroids[k];
+        if (dmg(a, a)) {
+          this._onAsteroidDestroyed(a);
+          this.asteroids.splice(k, 1);
+        }
+      }
+      for (let k = this.enemies.length - 1; k >= 0; k--) {
+        const e = this.enemies[k];
+        if (dmg(e, e)) {
+          this._awardScore(BALANCE.ENEMY_SCORE, e.x, e.y);
+          this.enemies.splice(k, 1);
+        }
+      }
+      if (this.boss?.alive && dmg(this.boss, this.boss) && !this.boss.alive) {
+        this._onBossDefeated();
+      }
+    }
+  }
+
+  _findLockTarget() {
+    const ship = this.ship;
+    if (!ship?.alive) return null;
+    const armed = ship.weapons?.currentWeapon?.id === 'missiles';
+    if (!armed) return null;
+
+    let best = null, bestD = Infinity;
+    const consider = (obj, weight = 1) => {
+      if (!obj) return;
+      const dx = obj.x - ship.x, dy = obj.y - ship.y;
+      if (dx < -20) return;
+      const d = (dx * dx + dy * dy) * weight;
+      if (d < bestD) { bestD = d; best = obj; }
+    };
+    if (this.boss?.alive) consider(this.boss, 0.55);
+    for (const m of this.moons) if (m.active) consider(m, 0.75);
+    for (const e of this.enemies) if (e.active) consider(e, 0.85);
+    for (const a of this.asteroids) {
+      if (a.active && a.size === ASTEROID_SIZE.LARGE) consider(a, 1);
+    }
+    return best;
+  }
+
+  _drawLock() {
+    if (!this._juiceG) return;
+    this._juiceG.clear();
+    for (const s of this.smears) {
+      const t = 1 - s.age / BALANCE.PLASMA_SMEAR_MS;
+      this._juiceG.fillStyle(C.BLAZE, 0.22 * t);
+      this._juiceG.fillCircle(s.x, s.y, BALANCE.PLASMA_SMEAR_R);
+    }
+    if (this.lockTarget) {
+      drawLockDiamond(this._juiceG, this.lockTarget.x, this.lockTarget.y, 18);
+    }
+  }
+
   // ── Spawning ──────────────────────────────────────────────────────────────────
 
   _spawnAsteroid() {
@@ -673,16 +938,25 @@ export class GameScene extends Phaser.Scene {
     this.moons.push(new Moon(this, moonDef, y));
   }
 
+  _spawnEnemy() {
+    const { height } = this.scale;
+    const y = Phaser.Math.Between(70, height - 70);
+    this.enemies.push(new EnemyShip(this, 1320, y));
+  }
+
   _spawnBoss() {
     const bossConfig = { ...this.planetData.boss, bossHp: this.planetData.boss.hp };
     this.boss = new Boss(this, bossConfig, this.planetData);
-    this.audio.startMusic(true);   // switch to boss music variant
+    this.audio.startMusic(true, this.planetData.index ?? 0);
+    this._showBanner((this.planetData.boss?.theme || 'BOSS').toUpperCase(), 2200);
+    if (this.audio) this.audio.playBossAlert?.();
   }
 
   // ── Asteroid destroyed ────────────────────────────────────────────────────────
 
   _onAsteroidDestroyed(a) {
-    this.score += BALANCE[`SCORE_${a.sizeLabel}_ASTEROID`];
+    this._awardScore(BALANCE[`SCORE_${a.sizeLabel}_ASTEROID`], a.x, a.y);
+    if (a.sizeLabel === 'LARGE') this._hitstop = Math.max(this._hitstop, BALANCE.HITSTOP_MS);
     this._spawnPickup(a.x, a.y);
     // Large splits into mediums
     if (a.sizeLabel === 'LARGE') {
@@ -704,7 +978,11 @@ export class GameScene extends Phaser.Scene {
     if (r < BALANCE.GEM_DROP_CHANCE)                                    type = PICKUP_TYPE.GEM;
     else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE)   type = PICKUP_TYPE.COIN;
     else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE + BALANCE.AMMO_CRATE_DROP_CHANCE) type = PICKUP_TYPE.AMMO;
-    else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE + BALANCE.AMMO_CRATE_DROP_CHANCE + BALANCE.POWERUP_DROP_CHANCE) type = PICKUP_TYPE.SHIELD;
+    else if (r < BALANCE.GEM_DROP_CHANCE + BALANCE.COIN_DROP_CHANCE + BALANCE.AMMO_CRATE_DROP_CHANCE + BALANCE.POWERUP_DROP_CHANCE) {
+      type = Math.random() < BALANCE.RAPID_FIRE_DROP_FRACTION
+        ? PICKUP_TYPE.RAPID_FIRE
+        : PICKUP_TYPE.SHIELD;
+    }
     if (type) this.pickups.push(new Pickup(this, type, x, y));
   }
 
@@ -712,11 +990,13 @@ export class GameScene extends Phaser.Scene {
     switch (pk.type) {
       case PICKUP_TYPE.COIN:
         this.coinsThisRun += BALANCE.COIN_VALUE;
-        this.score        += 5;
+        this._awardScore(5, pk.x, pk.y);
+        if (this.audio) this.audio.playCoinPickup?.();
         break;
       case PICKUP_TYPE.GEM:
         this.coinsThisRun += BALANCE.GEM_VALUE;
-        this.score        += 15;
+        this._awardScore(15, pk.x, pk.y);
+        if (this.audio) this.audio.playGemPickup?.();
         break;
       case PICKUP_TYPE.SHIELD:
         this.ship?.healShield(BALANCE.SHIELD_BOOST_AMOUNT);
@@ -726,6 +1006,8 @@ export class GameScene extends Phaser.Scene {
         break;
       case PICKUP_TYPE.RAPID_FIRE:
         this.events.emit('pickupRapidFire');
+        this._showBanner('RAPID FIRE', 1400);
+        if (this.audio) this.audio.playPowerUpPickup?.();
         break;
     }
     pk.destroy();
@@ -801,6 +1083,9 @@ export class GameScene extends Phaser.Scene {
 
     this.events.off('shipDestroyed',    this._onShipDestroyed,    this);
     this.events.off('conquestComplete', this._onConquestComplete, this);
+    this.events.off('shipHit',          this._onShipHit,          this);
+    this.events.off('hexPocketOpen',    this._onHexPocket,        this);
+    this.events.off('weaponEmpty',       this._onFirstReload,     this);
 
     this.ship?.destroy();
     this.boss?.destroy();
@@ -810,15 +1095,20 @@ export class GameScene extends Phaser.Scene {
     this.projectiles.forEach(p => p.destroy());
     this.pickups.forEach(pk   => pk.destroy());
     this.moons.forEach(m      => m.destroy());
+    this.enemies.forEach(e    => e.destroy());
 
     this.asteroids  = [];
     this.projectiles = [];
     this.pickups    = [];
     this.moons      = [];
+    this.enemies    = [];
+    this.smears     = [];
     for (const bp of this._bossProj) {
       try { bp._g?.destroy(); } catch {}
     }
     this._bossProj  = [];
+
+    if (this._juiceG) { this._juiceG.destroy(); this._juiceG = null; }
 
     if (this._backdropImg) {
       this._backdropImg.destroy();

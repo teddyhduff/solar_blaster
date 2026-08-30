@@ -35,6 +35,18 @@ export const BALANCE = {
   SCORE_MOON:               250,   // rarely worth it — that's the joke
   SCORE_BOSS:               500,
   SCORE_BOSS_SURVIVAL_BONUS: 200,  // scaled to remaining shield fraction
+  SCORE_NEAR_MISS:           15,
+  COMBO_WINDOW_MS:         2600,
+  COMBO_MAX:                  8,
+  HITSTOP_MS:                48,
+  HITSTOP_BOSS_MS:           72,
+  NEAR_MISS_PAD:             18,
+  HEX_COIN_COUNT:             7,
+  PLASMA_SMEAR_MS:          420,
+  PLASMA_SMEAR_R:            16,
+  PLASMA_SMEAR_DAMAGE:        8,
+  PLASMA_SMEAR_GAP:          30,   // drop a smear every N px of travel
+  RAPID_FIRE_DROP_FRACTION: 0.45,  // share of POWERUP drops that are rapid-fire
 
   // ── Phase Durations ────────────────────────────────────────────────────────
   PHASE_APPROACH_MS:       45000,  // ~45 seconds
@@ -94,4 +106,16 @@ export const BALANCE = {
   MOON_HP:                  1000,   // enormous HP — dodge-only in practice
   MOON_SCORE:                250,   // same as SCORE_MOON (alias for clarity)
   MOON_SPEED_PX_S:            30,   // slow drift speed
+
+  // ── Enemy ships ────────────────────────────────────────────────────────────
+  ENEMY_HP:                   28,
+  ENEMY_DAMAGE:               18,   // ram
+  ENEMY_SHOT_DAMAGE:          12,
+  ENEMY_SCORE:                40,
+  ENEMY_SPEED:               110,
+  ENEMY_FIRE_MS:            1900,
+  ENEMY_SPAWN_MS:          10400,
+  ENEMY_SPAWN_FIRST_MS:    16000,
+  ENEMY_MAX_ALIVE:             3,
+  DAMAGE_ROCKET:              30,
 };
